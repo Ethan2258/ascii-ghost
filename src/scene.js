@@ -33,9 +33,11 @@ const THEMES = {
   },
 };
 THEMES.dark.embed = {
+  tileLo: [52, 56, 68], tileHi: [222, 226, 236], tileInk: 0.42, tileSocket: null,
   ...THEMES.dark, key: "dark-embed", page: [13, 17, 23], edge: null, sky: null, ground: [120, 122, 132], glowA: 0.36,
 };
 THEMES.light.embed = {
+  tileLo: [228, 229, 233], tileHi: [118, 120, 130], tileInk: 0.5, tileSocket: [64, 66, 76],
   ...THEMES.light, key: "light-embed", page: [255, 255, 255], edge: null, sky: null, ground: [132, 132, 140],
   fog: [150, 150, 158], ghostLo: [186, 186, 192], ghostHi: [40, 40, 46], glow: [120, 122, 132], glowA: 0.22,
 };
@@ -80,7 +82,7 @@ export function mount(canvas, opts = {}) {
     W = w; H = h; dpr = ratio; S = Math.min(W, H);
     canvas.width = Math.round(W * dpr);
     canvas.height = Math.round(H * dpr);
-    cw = embed ? 13 : clamp(Math.round(W / 150), 7, 11);
+    cw = embed ? 12 : clamp(Math.round(W / 150), 7, 11);
     ch = Math.round(cw * 1.35);
     cols = Math.ceil(W / cw);
     rows = Math.ceil(H / ch);
@@ -159,18 +161,7 @@ export function mount(canvas, opts = {}) {
     if (caches[key]) return caches[key];
     const mk = () => { const c = document.createElement("canvas"); c.width = canvas.width; c.height = canvas.height; const x = c.getContext("2d"); x.scale(dpr, dpr); return [c, x]; };
     const [bg, b] = mk();
-    if (embed) { // no backdrop at all: the graves are loose glyphs and the ground fades out under them
-      b.font = font(); b.textAlign = "center"; b.textBaseline = "middle";
-      for (let k = 0; k < ground.length; k++) {
-        const gd = ground[k];
-        if (gd < 0.15) continue;
-        const i = k % cols, j = (k / cols) | 0;
-        const fade = j >= hillRow[i] ? 0 : 1; // graves and tree only, no ground
-        if (fade <= 0.02) continue;
-        const h = hash3(i, j, 4), edge = gd < 0.75;
-        b.fillStyle = rgba(pal.ground, (edge ? 0.5 : 0.9) * fade);
-        b.fillText(edge ? (gd < 0.45 ? "." : ":") : h < 0.85 ? "#" : "%", (i + 0.5) * cw, (j + 0.5) * ch); // even fill, so the shapes read
-      }
+    if (embed) { // the README shows only the ghosts and a little fog: graves read as noise at that size
       return (caches[key] = { bg, vg: null });
     }
     b.fillStyle = rgba(pal.page); b.fillRect(0, 0, W, H);
@@ -217,7 +208,7 @@ export function mount(canvas, opts = {}) {
     };
   }
 
-  const radius = (g) => clamp(S * (0.055 + 0.03 * g.z), 22, 72) * g.K.size * (embed ? 1.6 : rec ? 1.15 : 1);
+  const radius = (g) => clamp(S * (0.055 + 0.03 * g.z), 22, 72) * g.K.size * (embed ? 1.95 : rec ? 1.15 : 1);
 
   /** Where the shroud trails: away from the motion, and down when still. */
   function trailTilt(g, vx, vy) {
@@ -232,7 +223,8 @@ export function mount(canvas, opts = {}) {
   /** Record mode: four figures on paths whose periods divide the loop, so it closes seamlessly. */
   function recordCast() {
     const r = rng(seed);
-    const cast = [makeGhost("shade", r), makeGhost("wisp", r), makeGhost("wraith", r), makeGhost("passer", r)];
+    const cast = [makeGhost("shade", r), makeGhost("wisp", r), makeGhost("wraith", r)];
+    if (!embed) cast.push(makeGhost("passer", r)); // the README keeps to three, well apart
     cast[0].z = 0.2; cast[1].z = 0.6; cast[2].z = 0.9;
     return cast;
   }
@@ -443,7 +435,7 @@ export function mount(canvas, opts = {}) {
         }
         if (d < 0.02) continue;
         const nz = fbm(x * 1.7 + g.id * 13 - g.wave * 0.2, y * 1.4 - g.wave * 0.35, seed + 61, 3);
-        d *= 1 - (1 - d) * (1 - d) * 0.95 * clamp(1.7 - nz * 2.4, 0, 1) * (0.3 + clamp(y / tailN, 0, 1));
+        if (!embed) d *= 1 - (1 - d) * (1 - d) * 0.95 * clamp(1.7 - nz * 2.4, 0, 1) * (0.3 + clamp(y / tailN, 0, 1)); // tiles want clean edges
         const k = j * cols + i;
         const v = clamp(d, 0, 1) * depth * sink;
         if (v > dens[k]) dens[k] = v;
@@ -467,11 +459,51 @@ export function mount(canvas, opts = {}) {
   function updateGhosts(t, dt) {
     dens.fill(0); hole.fill(0);
     for (const g of ghosts) stampGhost(g, t);
-    const keep = Math.exp(-dt * 7);
+    const keep = Math.exp(-dt * (embed ? 16 : 7));
     for (let k = 0; k < trail.length; k++) { const a = trail[k] * keep; trail[k] = dens[k] > a ? dens[k] : a; }
   }
 
   // --------------------------------------------------------------- drawing
+
+  const TILE = "t%SX8@#"; // dense in shadow, sparse in light
+
+  /** README style: every cell of a ghost is a small tile with a glyph on it, with a gap between
+   *  tiles, like ascii-pond's koi. No glow, so the shapes stay crisp when GitHub scales them. */
+  function drawTiles(pal) {
+    ctx.font = font();
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    for (let k = 0, n = trail.length; k < n; k++) {
+      const i = k % cols, j = (k / cols) | 0, x = i * cw, y = j * ch;
+      const v = trail[k], h = hole[k];
+      if (pal.tileSocket && h > 0.25) { // hollow face, as dark tiles
+        ctx.globalAlpha = 0.35 + 0.6 * smoothstep(0.25, 0.6, h);
+        ctx.fillStyle = rgba(pal.tileSocket);
+        ctx.fillRect(x + 1, y + 1, cw - 1, ch - 1);
+        continue;
+      }
+      if (v < 0.07) {
+        // a few specks of fog, nothing more
+        const raw = fogGrid[((j / 2) | 0) * gcols + ((i / 2) | 0)];
+        const f = smoothstep(0.62, 0.8, raw) * (0.4 + 0.6 * lowFog(j));
+        if (f > 0.05 && hash3(i, j, 17) < f * 0.5) {
+          ctx.globalAlpha = 0.35 * f + 0.1;
+          ctx.fillStyle = rgba(pal.fog);
+          ctx.fillText(".", x + cw / 2, y + ch / 2);
+        }
+        continue;
+      }
+      const lum = clamp(v, 0, 1);
+      const col = mixRgb(pal.tileLo, pal.tileHi, Math.pow(lum, 0.8));
+      ctx.globalAlpha = 0.25 + 0.75 * smoothstep(0.07, 0.4, v);
+      ctx.fillStyle = rgba(col);
+      ctx.fillRect(x + 1, y + 1, cw - 1, ch - 1);
+      const jit = (hash3(i, j, 7) * 3) | 0;
+      ctx.fillStyle = rgba(col.map((c) => c * pal.tileInk));
+      ctx.fillText(TILE[clamp(Math.round((1 - lum) * 4) + jit, 0, 6)], x + cw / 2, y + ch / 2);
+    }
+    ctx.globalAlpha = 1;
+  }
 
   function drawScene(t) {
     const pal = embed ? P.embed : P;
@@ -488,6 +520,7 @@ export function mount(canvas, opts = {}) {
       g.addColorStop(0, rgba(pal.flash, a * 0.05)); g.addColorStop(1, rgba(pal.flash, a * 0.35));
       ctx.fillStyle = g; ctx.fillRect(0, 0, W, horizon + ch);
     }
+    if (embed) { drawTiles(pal); return; }
 
     // soft light that follows each wraith's exact shape
     const gd = glowImg.data, gl = pal.glow;
