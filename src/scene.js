@@ -25,11 +25,11 @@ const THEMES = {
     socket: null, ripple: [196, 198, 206], flash: [190, 198, 222],
   },
   light: {
-    key: "light",
-    page: [200, 201, 204], edge: [58, 60, 66, 0.4], sky: [236, 236, 238],
-    fog: [250, 250, 252], ground: [52, 52, 57], groundEdge: [92, 92, 98],
-    ghostLo: [214, 214, 218], ghostHi: [104, 105, 114], glow: [255, 255, 255], glowA: 0.82, blend: "source-over",
-    socket: [24, 24, 28], ripple: [60, 60, 66], flash: [255, 255, 255],
+    key: "light", ink: true,
+    page: [244, 242, 238], edge: [112, 106, 98, 0.2], sky: [226, 224, 220],
+    fog: [150, 148, 144], ground: [96, 94, 92], groundEdge: [150, 148, 144],
+    ghostLo: [214, 212, 207], ghostHi: [38, 38, 42], glow: [255, 255, 255], glowA: 0.7, blend: "source-over",
+    socket: [30, 30, 34], ripple: [70, 70, 74], flash: [255, 255, 255],
   },
 };
 THEMES.dark.embed = {
@@ -37,9 +37,8 @@ THEMES.dark.embed = {
   ground: [6, 8, 12], groundEdge: [70, 76, 90],
 };
 THEMES.light.embed = {
-  ...THEMES.light, key: "light-embed", page: [255, 255, 255], edge: [255, 255, 255, 1], sky: [226, 228, 233],
-  ground: [78, 80, 88], groundEdge: [120, 122, 130], fog: [140, 142, 150],
-  ghostLo: [196, 198, 204], ghostHi: [48, 50, 58], glow: [150, 154, 166], glowA: 0.32, socket: [40, 42, 50],
+  ...THEMES.light, key: "light-embed", page: [255, 255, 255], edge: [255, 255, 255, 1], sky: [240, 240, 242],
+  ground: [120, 120, 126], groundEdge: [168, 168, 174], fog: [168, 168, 174], ghostLo: [210, 210, 214], glowA: 0,
 };
 for (const t of [THEMES.dark, THEMES.light, THEMES.dark.embed, THEMES.light.embed]) {
   t.css = [];
@@ -182,6 +181,14 @@ export function mount(canvas, opts = {}) {
       const gd = ground[k];
       if (gd < 0.15) continue;
       const i = k % cols, j = (k / cols) | 0;
+      if (pal.ink) {
+        const fade = 1 - smoothstep(0, 5, j - hillRow[i]);
+        if (fade < 0.03) continue;
+        const edge = gd < 0.75, h = hash3(i, j, 4);
+        b.fillStyle = rgba(edge ? pal.groundEdge : pal.ground, (edge ? 0.7 : 0.9) * fade);
+        b.fillText(edge ? (gd < 0.45 ? "." : ":") : h < 0.8 ? "#" : "%", (i + 0.5) * cw, (j + 0.5) * ch);
+        continue;
+      }
       b.fillStyle = rgba(pal.ground, Math.min(1, gd * 1.3));
       b.fillRect(i * cw - 0.3, j * ch - 0.3, cw + 0.6, ch + 0.6);
       if (gd < 0.75) { b.fillStyle = rgba(pal.groundEdge, 0.7); b.fillText(gd < 0.45 ? "." : ":", (i + 0.5) * cw, (j + 0.5) * ch); }
@@ -456,7 +463,8 @@ export function mount(canvas, opts = {}) {
         }
         if (d < 0.02) continue;
         const nz = fbm(x * 1.7 + g.id * 13 - g.wave * 0.2, y * 1.4 - g.wave * 0.35, seed + 61, 3);
-        d *= 1 - (1 - d) * (1 - d) * 0.95 * clamp(1.7 - nz * 2.4, 0, 1) * (0.3 + clamp(y / tailN, 0, 1));
+        // smoke at the edges; the ink theme keeps a clean outline instead
+        if (!P.ink) d *= 1 - (1 - d) * (1 - d) * 0.95 * clamp(1.7 - nz * 2.4, 0, 1) * (0.3 + clamp(y / tailN, 0, 1));
         const k = j * cols + i;
         const v = clamp(d, 0, 1) * depth * sink;
         if (v > dens[k]) dens[k] = v;
@@ -529,11 +537,22 @@ export function mount(canvas, opts = {}) {
         const dim = 1 - 0.8 * avoid[k];
         const v = trail[k];
         let b, ch2;
-        if (pal.socket && hole[k] > 0.22) { // the hollow face, painted dark
+        if (pal.socket && hole[k] > 0.18) { // the hollow face, painted dark
           b = SOCKET; ch2 = hole[k] > 0.5 ? 9 : hole[k] > 0.34 ? 8 : 7;
         } else if (v >= 0.05) {
-          b = Math.round(clamp(v * dim, 0, 1) * (GL - 1));
-          ch2 = clamp(Math.round(v * 9.4), 1, 9);
+          if (pal.ink) {
+            // an outline: dark ink on the outermost ring of the figure, lighter on the next,
+            // and only faint dots on the sheet inside
+            const T = 0.06, at = (ii, jj) => (ii < 0 || jj < 0 || ii >= cols || jj >= rows ? 0 : trail[jj * cols + ii]);
+            const ring1 = at(i - 1, j) < T || at(i + 1, j) < T || at(i, j - 1) < T || at(i, j + 1) < T;
+            const ring2 = !ring1 && (at(i - 2, j) < T || at(i + 2, j) < T || at(i, j - 2) < T || at(i, j + 2) < T);
+            const ink = ring1 ? 0.95 : ring2 ? 0.5 : 0.1 + 0.12 * v;
+            b = Math.round(clamp(ink * Math.min(1, v * 2.2) * dim, 0, 1) * (GL - 1));
+            ch2 = ring1 ? (hash3(i, j, 3) < 0.5 ? 7 : 8) : ring2 ? 5 : v > 0.45 ? 2 : 1;
+          } else {
+            b = Math.round(clamp(v * dim, 0, 1) * (GL - 1));
+            ch2 = clamp(Math.round(v * 9.4), 1, 9);
+          }
         } else {
           const fx = i / 2, fxi = fx | 0, ffx = fx - fxi, q = fyi * gcols + fxi;
           const raw = lerp(lerp(fogGrid[q], fogGrid[q + 1], ffx), lerp(fogGrid[q + gcols], fogGrid[q + gcols + 1], ffx), ffy);
