@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="ASCII 血月：字符拼成的暗月与鸦群，跟随指针翻涌，点击夜空惊起乌鸦。">
+<meta name="theme-color" content="#0c0405">
+<link rel="icon" href="./favicon.svg" type="image/svg+xml">
+<link rel="preload" href="./fonts/geist-mono-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+<script>
+  try {
+    var stored = localStorage.getItem("theme");
+    var light = stored ? stored === "light" : matchMedia("(prefers-color-scheme: light)").matches;
+    if (light) document.documentElement.dataset.theme = "light";
+    if (new URLSearchParams(location.search).has("record")) document.documentElement.dataset.record = "";
+  } catch (e) {}
+</script>
+<title>Ethan · Blood Moon</title>
+<style>
+  /* Geist Mono by Vercel, SIL OFL 1.1 — see fonts/GEIST-LICENSE. */
+  @font-face { font-family: "Geist Mono"; src: url("./fonts/geist-mono-latin-400-normal.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+
+  :root {
+    --background-color: #0c0405;
+    --foreground-color: #f6ddd7;
+    --accent: #e8483a;
+    --mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo,
+            "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Microsoft YaHei", monospace;
+    color-scheme: dark;
+  }
+  :root[data-theme="light"] {
+    --background-color: #f5f0eb;
+    --foreground-color: #2a1416;
+    --accent: #a8161c;
+    color-scheme: light;
+  }
+  :focus-visible { outline: 1px solid color-mix(in srgb, var(--foreground-color) 45%, transparent);
+                   outline-offset: 3px; border-radius: 2px; }
+  ::selection { background: color-mix(in srgb, var(--accent) 35%, transparent); }
+  @media (forced-colors: active) { #sky { display: none; } }
+
+  html, body { margin: 0; height: 100%; background: var(--background-color);
+               color: var(--foreground-color); overflow: hidden;
+               transition: background-color .4s, color .4s; }
+  body { font-family: var(--mono); }
+  canvas { display: block; position: fixed; inset: 0; width: 100%; height: 100%; }
+  :root[data-record] :is(nav, main) { display: none; }
+  :root[data-record] canvas { inset: auto; top: 0; left: 0; }
+
+  nav { position: fixed; inset-inline: 0; top: 0; z-index: 30; display: flex; justify-content: center;
+        gap: 32px; padding-top: 32px; font-size: 13px; }
+  nav a { color: inherit; text-decoration: none; opacity: .5; transition: opacity .15s; }
+  nav a:hover, nav a[aria-current] { opacity: 1; }
+  nav button { margin: -16px; padding: 16px; border: 0; background: none; color: inherit;
+               opacity: .5; cursor: pointer; transition: opacity .15s; }
+  nav button:hover, nav button:focus-visible { opacity: 1; outline: none; }
+  nav button svg { display: block; }
+  nav button .moon { display: none; }
+  :root[data-theme="light"] nav button .moon { display: block; }
+  :root[data-theme="light"] nav button .sun { display: none; }
+
+  main { position: relative; z-index: 20; height: 100%; pointer-events: none; }
+  main :is(a, button, .cite) { pointer-events: auto; }
+  .view { display: none; }
+  .view[data-active] { display: flex; height: 100%; }
+
+  .hero { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; gap: 40px;
+          padding: 32px 24px 8rem; box-sizing: border-box; }
+  .quote { margin: 0; font-size: 14px; line-height: 1.625; letter-spacing: .02em; opacity: .6; }
+  .intro { max-width: 54rem; font-size: 15px; line-height: max(22px, 3vh); }
+  .intro h1, .intro p { margin: 0; font-size: inherit; font-weight: 400; }
+  .intro .socials { margin: 13px 0 0; }
+  .moonword { color: var(--accent); }
+
+  .cite { position: relative; }
+  .cite > a { color: inherit; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 5px;
+              text-decoration-color: color-mix(in srgb, var(--foreground-color) 35%, transparent); }
+  .cite > a:hover, .cite > a:focus-visible { text-decoration-color: currentColor; }
+  .card { position: absolute; left: -10px; bottom: calc(100% + 8px); z-index: 40; width: 252px;
+          display: flex; flex-direction: column; gap: 1px; padding: 10px 12px; border-radius: 10px;
+          background: color-mix(in srgb, var(--foreground-color) 9%, var(--background-color));
+          border: 1px solid color-mix(in srgb, var(--foreground-color) 15%, transparent);
+          box-shadow: 0 14px 34px color-mix(in srgb, #000 30%, transparent);
+          font-size: 12px; line-height: 1.45; text-align: left;
+          opacity: 0; transform: translateY(4px); pointer-events: none;
+          transition: opacity .14s ease, transform .14s ease; }
+  .cite:hover .card, .cite:focus-within .card { opacity: 1; transform: none; }
+  .card b { font-size: 13px; font-weight: 400; }
+  .card .role { opacity: .7; }
+  .card .summary { margin-top: 4px; opacity: .55; }
+  @media (max-width: 640px) {
+    .card { position: fixed; left: 12px; right: 12px; bottom: 12px; width: auto; transform: translateY(8px); }
+  }
+
+  .ink { color: inherit; text-decoration: underline; text-decoration-thickness: 1px;
+         text-underline-offset: 5px;
+         text-decoration-color: color-mix(in srgb, var(--foreground-color) 35%, transparent);
+         opacity: .6; transition: opacity .15s, text-decoration-color .15s; }
+  .ink:hover, .ink:focus-visible { opacity: 1; text-decoration-color: currentColor; }
+  .sep { opacity: .4; }
+
+  .cursor { display: inline-block; width: .55em; height: 1em; margin-left: .25em;
+            transform: translateY(.15em); background: var(--accent);
+            animation: blink 1.2s steps(1) infinite; }
+  @keyframes blink { 0%, 49% { opacity: 1 } 50%, 100% { opacity: 0 } }
+  @media (prefers-reduced-motion: reduce) { .cursor { animation: none } .card { transition: none } }
+
+  .list { height: 100%; padding: 212px 24px 8rem; box-sizing: border-box; }
+  .entries { margin: 0; padding: 0; list-style: none; font-size: 15px; line-height: 1.7; }
+  .entries li { margin-bottom: 18px; }
+  .entries li::before { content: "•"; margin-right: .6em; color: var(--accent); }
+  .entries .desc { display: block; margin-left: 1.25em; font-size: 13px; opacity: .55; max-width: 40rem; }
+
+  @media (min-width: 1024px) {
+    .hero, .list { padding-left: 12vw; padding-right: 12vw; }
+  }
+  @media (max-height: 720px) {
+    .hero { gap: 24px; padding-top: 5rem; padding-bottom: 3rem; }
+  }
+</style>
+
+<body>
+<canvas id="sky" aria-hidden="true"></canvas>
+
+<nav data-sky-avoid aria-label="Main">
+  <a href="#/">moon</a>
+  <a href="#/projects">projects</a>
+  <button type="button" role="switch" aria-checked="false" aria-label="Light theme">
+    <svg class="sun" width="15" height="15" viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="4.6" fill="currentColor"/>
+      <g stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+        <path d="M12 1.8v3M12 19.2v3M1.8 12h3M19.2 12h3M4.8 4.8l2.1 2.1M17.1 17.1l2.1 2.1M19.2 4.8l-2.1 2.1M6.9 17.1l-2.1 2.1"/>
+      </g>
+    </svg>
+    <svg class="moon" width="15" height="15" viewBox="0 0 24 24" aria-hidden="true">
+      <path fill="currentColor" d="M20.4 15.6A9 9 0 0 1 8.4 3.6a9 9 0 1 0 12 12Z"/>
+    </svg>
+  </button>
+</nav>
+
+<main>
+  <section class="view" data-view="moon" data-active>
+    <div class="hero">
+      <blockquote class="quote" data-sky-avoid>blood moon,<br>black wings<span class="cursor"></span></blockquote>
+      <div class="intro" data-sky-avoid>
+        <h1>你好，我是 Ethan。</h1>
+        <p>在 GitHub 上边做边学，遇到喜欢的项目会点个 Star。</p>
+        <p>最近在维护 <span class="cite"><a href="https://github.com/Ethan2258/rules" target="_blank" rel="noopener noreferrer">rules</a><span class="card" aria-hidden="true"><b>rules</b><span class="role">sing-box / Egern 规则集</span><span class="summary">精简规则集（NodeSeek、WebRTC、Telegram），定时自动同步上游。</span></span></span> 和 <span class="cite"><a href="https://github.com/Ethan2258/ou-image-hosting" target="_blank" rel="noopener noreferrer">ou-image-hosting</a><span class="card" aria-hidden="true"><b>ou-image-hosting</b><span class="role">自托管图床与相册</span><span class="summary">欧记图床的分支，支持 R2 / S3 存储和 Docker 部署。</span></span></span>。</p>
+        <p>点一下夜空，惊起<span class="moonword">鸦群</span>。</p>
+        <p class="socials">
+          <a class="ink" href="https://github.com/Ethan2258" target="_blank" rel="noopener noreferrer">github</a><span class="sep"> / </span><a class="ink" href="https://github.com/Ethan2258/ascii-bloodmoon" target="_blank" rel="noopener noreferrer">source</a>
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section class="view" data-view="projects">
+    <div class="list">
+      <ul class="entries" data-sky-avoid>
+        <li><a class="ink" href="https://github.com/Ethan2258/rules" target="_blank" rel="noopener noreferrer">rules</a><span class="desc">为 sing-box 和 Egern 自动维护的精简规则集（NodeSeek、WebRTC、Telegram），定时自动同步上游。</span></li>
+        <li><a class="ink" href="https://github.com/Ethan2258/ou-image-hosting" target="_blank" rel="noopener noreferrer">ou-image-hosting</a><span class="desc">欧记图床（OU-Image Hosting）的分支：自托管图床与相册，支持 R2 / S3 存储和 Docker 部署，自动同步上游。</span></li>
+        <li><a class="ink" href="https://github.com/Ethan2258/ascii-bloodmoon" target="_blank" rel="noopener noreferrer">ascii-bloodmoon</a><span class="desc">就是这一页：字符拼成的血月与鸦群。</span></li>
+      </ul>
+    </div>
+  </section>
+</main>
+
+<script type="module" src="./src/main.js"></script>
