@@ -35,9 +35,10 @@ const THEMES = {
   // under a heavy vignette, pale fog lying on the ground, and the ghosts as dark shadow
   light: {
     key: "light",
-    page: [164, 170, 166], skyTop: [118, 126, 123], sky: [196, 202, 196], edge: [26, 32, 30, 0.6],
-    fog: [212, 220, 214], ground: [30, 36, 34], groundEdge: [82, 92, 88],
-    ghostLo: [146, 154, 150], ghostHi: [16, 20, 20], glow: [24, 30, 30], glowA: 0.34, blend: "source-over",
+    page: [160, 167, 163], skyTop: [108, 116, 113], sky: [204, 210, 204], edge: [22, 28, 26, 0.62],
+    fog: [222, 230, 224], ground: [26, 31, 30], groundEdge: [78, 88, 84], noGroundFog: true,
+    // dark smoke wrapped in a pale, cold aura, so each one stands out of the grey
+    ghostLo: [118, 126, 122], ghostHi: [10, 13, 13], glow: [234, 242, 237], glowA: 0.5, blend: "source-over",
     socket: null, ripple: [26, 32, 32],
   },
 };
@@ -690,7 +691,7 @@ export function mount(canvas, opts = {}) {
           const fx = i / 2, fxi = fx | 0, ffx = fx - fxi, q = fyi * gcols + fxi;
           const raw = lerp(lerp(fogGrid[q], fogGrid[q + 1], ffx), lerp(fogGrid[q + gcols], fogGrid[q + gcols + 1], ffx), ffy);
           let f = smoothstep(0.48, 0.76, raw) * (0.35 + 0.65 * lf);
-          if (ground[k] > 0.15 && (f < 0.55 || pal.socket)) continue; // pale fog over dark ground reads as stripes in the light theme
+          if (ground[k] > 0.15 && (f < 0.55 || pal.socket || pal.noGroundFog)) continue; // pale fog over dark ground reads as a patch // pale fog over dark ground reads as stripes in the light theme
           let boost = 0;
           if (lit > 0.01) { const dx = (i + 0.5) * cw - lx, dy = cy - ly; boost = lit * Math.exp(-(dx * dx + dy * dy) / lr2); }
           f = Math.min(1, f + boost * 0.35);
