@@ -2,8 +2,8 @@
 <html lang="zh-CN" data-theme="dark">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="ASCII 血月：字符拼成的暗月与鸦群，跟随指针翻涌，点击夜空惊起乌鸦。">
-<meta name="theme-color" content="#0c0405">
+<meta name="description" content="ASCII 鬼域：字符拼成的幽灵在灰雾里飘，会好奇地凑近指针，点一下就吓跑。">
+<meta name="theme-color" content="#0a0a0c">
 <link rel="icon" href="./favicon.svg" type="image/svg+xml">
 <link rel="preload" href="./fonts/geist-mono-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
 <script>
@@ -14,23 +14,23 @@
     if (new URLSearchParams(location.search).has("record")) document.documentElement.dataset.record = "";
   } catch (e) {}
 </script>
-<title>Ethan · Blood Moon</title>
+<title>Ethan · Ghost Realm</title>
 <style>
   /* Geist Mono by Vercel, SIL OFL 1.1 — see fonts/GEIST-LICENSE. */
   @font-face { font-family: "Geist Mono"; src: url("./fonts/geist-mono-latin-400-normal.woff2") format("woff2"); font-weight: 400; font-display: swap; }
 
   :root {
-    --background-color: #0c0405;
-    --foreground-color: #f6ddd7;
-    --accent: #e8483a;
+    --background-color: #0a0a0c;
+    --foreground-color: #e9e9ec;
+    --accent: #b9bcc4;
     --mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo,
             "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Microsoft YaHei", monospace;
     color-scheme: dark;
   }
   :root[data-theme="light"] {
-    --background-color: #f5f0eb;
-    --foreground-color: #2a1416;
-    --accent: #a8161c;
+    --background-color: #e2e1de;
+    --foreground-color: #262628;
+    --accent: #6d6f76;
     color-scheme: light;
   }
   :focus-visible { outline: 1px solid color-mix(in srgb, var(--foreground-color) 45%, transparent);
@@ -60,8 +60,16 @@
 
   main { position: relative; z-index: 20; height: 100%; pointer-events: none; }
   main :is(a, button, .cite) { pointer-events: auto; }
-  .view { display: none; }
-  .view[data-active] { display: flex; height: 100%; }
+  .view { position: absolute; inset: 0; display: flex; opacity: 0; visibility: hidden; transform: translateY(10px);
+          filter: blur(3px);
+          transition: opacity .45s ease, transform .45s ease, filter .45s ease, visibility 0s linear .45s; }
+  .view[data-active] { opacity: 1; visibility: visible; transform: none; filter: none;
+                       transition: opacity .55s ease .12s, transform .55s cubic-bezier(.2,.7,.2,1) .12s, filter .55s ease .12s; }
+  /* theme switch: the browser snapshots the old page and the new one grows out of the button */
+  ::view-transition-old(root), ::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+  ::view-transition-old(root) { z-index: 1; }
+  ::view-transition-new(root) { z-index: 2; }
+  :root[data-transition] *, :root[data-transition] { transition: none !important; }
 
   .hero { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; gap: 40px;
           padding: 32px 24px 8rem; box-sizing: border-box; }
@@ -104,7 +112,7 @@
   @keyframes blink { 0%, 49% { opacity: 1 } 50%, 100% { opacity: 0 } }
   @media (prefers-reduced-motion: reduce) { .cursor { animation: none } .card { transition: none } }
 
-  .list { height: 100%; padding: 212px 24px 8rem; box-sizing: border-box; }
+  .list { height: 100%; width: 100%; padding: 120px 24px 6rem; box-sizing: border-box; overflow-y: auto; pointer-events: auto; scrollbar-width: none; }
   .entries { margin: 0; padding: 0; list-style: none; font-size: 15px; line-height: 1.7; }
   .entries li { margin-bottom: 18px; }
   .entries li::before { content: "•"; margin-right: .6em; color: var(--accent); }
@@ -122,7 +130,7 @@
 <canvas id="sky" aria-hidden="true"></canvas>
 
 <nav data-sky-avoid aria-label="Main">
-  <a href="#/">moon</a>
+  <a href="#/">realm</a>
   <a href="#/projects">projects</a>
   <button type="button" role="switch" aria-checked="false" aria-label="Light theme">
     <svg class="sun" width="15" height="15" viewBox="0 0 24 24" aria-hidden="true">
@@ -138,16 +146,16 @@
 </nav>
 
 <main>
-  <section class="view" data-view="moon" data-active>
+  <section class="view" data-view="realm" data-active>
     <div class="hero">
-      <blockquote class="quote" data-sky-avoid>blood moon,<br>black wings<span class="cursor"></span></blockquote>
+      <blockquote class="quote" data-sky-avoid>they never left,<br>they only went quiet<span class="cursor"></span></blockquote>
       <div class="intro" data-sky-avoid>
         <h1>你好，我是 Ethan。</h1>
         <p>在 GitHub 上边做边学，遇到喜欢的项目会点个 Star。</p>
-        <p>最近在维护 <span class="cite"><a href="https://github.com/Ethan2258/rules" target="_blank" rel="noopener noreferrer">rules</a><span class="card" aria-hidden="true"><b>rules</b><span class="role">sing-box / Egern 规则集</span><span class="summary">精简规则集（NodeSeek、WebRTC、Telegram），定时自动同步上游。</span></span></span> 和 <span class="cite"><a href="https://github.com/Ethan2258/ou-image-hosting" target="_blank" rel="noopener noreferrer">ou-image-hosting</a><span class="card" aria-hidden="true"><b>ou-image-hosting</b><span class="role">自托管图床与相册</span><span class="summary">欧记图床的分支，支持 R2 / S3 存储和 Docker 部署。</span></span></span>。</p>
-        <p>点一下夜空，惊起<span class="moonword">鸦群</span>。</p>
+        <p>写用户脚本、规则集和探针主题，全部项目在 <a class="ink" href="#/projects">projects</a>。</p>
+        <p>别让指针停太久——它们会转过头来看你。</p>
         <p class="socials">
-          <a class="ink" href="https://github.com/Ethan2258" target="_blank" rel="noopener noreferrer">github</a><span class="sep"> / </span><a class="ink" href="https://github.com/Ethan2258/ascii-bloodmoon" target="_blank" rel="noopener noreferrer">source</a>
+          <a class="ink" href="https://github.com/Ethan2258" target="_blank" rel="noopener noreferrer">github</a><span class="sep"> / </span><a class="ink" href="https://github.com/Ethan2258/ascii-ghost" target="_blank" rel="noopener noreferrer">source</a>
         </p>
       </div>
     </div>
@@ -156,9 +164,14 @@
   <section class="view" data-view="projects">
     <div class="list">
       <ul class="entries" data-sky-avoid>
-        <li><a class="ink" href="https://github.com/Ethan2258/rules" target="_blank" rel="noopener noreferrer">rules</a><span class="desc">为 sing-box 和 Egern 自动维护的精简规则集（NodeSeek、WebRTC、Telegram），定时自动同步上游。</span></li>
-        <li><a class="ink" href="https://github.com/Ethan2258/ou-image-hosting" target="_blank" rel="noopener noreferrer">ou-image-hosting</a><span class="desc">欧记图床（OU-Image Hosting）的分支：自托管图床与相册，支持 R2 / S3 存储和 Docker 部署，自动同步上游。</span></li>
-        <li><a class="ink" href="https://github.com/Ethan2258/ascii-bloodmoon" target="_blank" rel="noopener noreferrer">ascii-bloodmoon</a><span class="desc">就是这一页：字符拼成的血月与鸦群。</span></li>
+        <li><a class="ink" href="https://github.com/Ethan2258/monitor-theme-inkpond" target="_blank" rel="noopener noreferrer">monitor-theme-inkpond</a><span class="desc">墨池 · Inkpond — Monitor 探针主题：字符锦鲤池塘、点阵地球仪、人民币/美元价格与剩余价值。</span></li>
+        <li><a class="ink" href="https://github.com/Ethan2258/Nodeseek-max" target="_blank" rel="noopener noreferrer">Nodeseek-max</a><span class="desc">NodeSeek / DeepFlood 增强用户脚本：圆角主题、阅读与回复、通知与侧栏，适配 iPhone Safari + Userscripts。</span></li>
+        <li><a class="ink" href="https://github.com/Ethan2258/sub-store" target="_blank" rel="noopener noreferrer">sub-store</a><span class="desc">Sub Store 前端：黑白灰液态玻璃。</span></li>
+        <li><a class="ink" href="https://github.com/Ethan2258/egern-seekly" target="_blank" rel="noopener noreferrer">egern-seekly</a><span class="desc">Egern 模块：在 Telegram / Safari 点开 NodeSeek 帖子链接时直接跳转到 Seekly App。</span></li>
+        <li><a class="ink" href="https://github.com/Ethan2258/rules" target="_blank" rel="noopener noreferrer">rules</a><span class="desc">为 sing-box 和 Egern 自动维护的精简规则集（NodeSeek、WebRTC、Telegram），定时同步上游。</span></li>
+        <li><a class="ink" href="https://github.com/Ethan2258/ou-image-hosting" target="_blank" rel="noopener noreferrer">ou-image-hosting</a><span class="desc">欧记图床的分支：以视觉体验为核心的自托管图床与图片资产管理平台。</span></li>
+        <li><a class="ink" href="https://github.com/Ethan2258/themes" target="_blank" rel="noopener noreferrer">themes</a><span class="desc">Monitor 公开状态页的主题列表与在线预览（分支）。</span></li>
+        <li><a class="ink" href="https://github.com/Ethan2258/ascii-ghost" target="_blank" rel="noopener noreferrer">ascii-ghost</a><span class="desc">就是这一页：字符拼成的鬼域，和不肯离开的它们。</span></li>
       </ul>
     </div>
   </section>
