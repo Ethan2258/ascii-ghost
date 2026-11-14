@@ -22,33 +22,31 @@ const GL = 32, FL = 16; // ghost / fog colour levels
 // dark hollow faces. Each has a variant for the README recording, drawn on GitHub's own page
 // colour (#0d1117 / #ffffff), where a white ghost would vanish.
 const THEMES = {
+  // dark: a moonless, overcast night; nothing in the sky, only a sickly grey-green fog glow
+  // low on the horizon, and the ghosts' cold phosphor light
   dark: {
     key: "dark",
-    page: [10, 10, 12], skyTop: [12, 15, 26], edge: [0, 0, 0, 0.82], sky: [44, 46, 58],
-    moon: [214, 219, 230], star: [196, 204, 224],
-    fog: [124, 126, 134], ground: [6, 6, 8], groundEdge: [92, 94, 102],
-    ghostLo: [70, 72, 82], ghostHi: [232, 236, 242], glow: [150, 160, 182], glowA: 0.42, blend: "lighter",
-    socket: null, ripple: [196, 198, 206], flash: [190, 198, 222],
+    page: [7, 8, 8], skyTop: [4, 5, 5], edge: [0, 0, 0, 0.9], sky: [38, 50, 45],
+    fog: [104, 122, 114], ground: [3, 4, 4], groundEdge: [62, 76, 70],
+    ghostLo: [56, 68, 64], ghostHi: [210, 228, 220], glow: [110, 146, 132], glowA: 0.44, blend: "lighter",
+    socket: null, ripple: [170, 196, 186], flash: [176, 196, 190],
   },
-  // light: a pale blue-grey morning fog; the ghosts are the dark version turned to shadow,
-  // with the fog showing through their faces, over a slate graveyard that runs to the bottom
+  // light: a dead, overcast day; low grey-green light, darker overhead, near-black graves
+  // under a heavy vignette, pale fog lying on the ground, and the ghosts as dark shadow
   light: {
     key: "light",
-    page: [229, 231, 235], skyTop: [203, 210, 222], sky: [245, 238, 229], edge: [126, 132, 152, 0.26],
-    fog: [118, 125, 144], ground: [84, 86, 106], groundEdge: [134, 138, 158],
-    ghostLo: [178, 184, 198], ghostHi: [26, 30, 44], glow: [58, 66, 92], glowA: 0.3, blend: "source-over",
-    socket: null, ripple: [62, 66, 86], flash: [255, 255, 255],
+    page: [164, 170, 166], skyTop: [118, 126, 123], sky: [196, 202, 196], edge: [26, 32, 30, 0.6],
+    fog: [212, 220, 214], ground: [30, 36, 34], groundEdge: [82, 92, 88],
+    ghostLo: [146, 154, 150], ghostHi: [16, 20, 20], glow: [24, 30, 30], glowA: 0.34, blend: "source-over",
+    socket: null, ripple: [26, 32, 32], flash: [255, 255, 255],
   },
 };
 THEMES.dark.embed = {
-  ...THEMES.dark, key: "dark-embed", page: [13, 17, 23], edge: [13, 17, 23, 1], sky: [34, 38, 48],
-  ground: [6, 8, 12], groundEdge: [70, 76, 90],
+  ...THEMES.dark, key: "dark-embed", page: [13, 17, 23], skyTop: null, edge: [13, 17, 23, 1], sky: [28, 36, 36],
+  ground: [6, 8, 10], groundEdge: [60, 72, 70],
 };
-// README on GitHub's light theme: a pale blue-grey morning fog that fades to white at the edges,
-// and the dark version's ghosts turned to translucent shadow
-THEMES.light.embed = { // the README on GitHub's white: same fog, fading to white at the edges
-  ...THEMES.light, key: "light-embed", glyphGround: true,
-  edge: [255, 255, 255, 1], sky: [238, 241, 245], ground: [70, 76, 90], groundEdge: [120, 128, 142],
+THEMES.light.embed = { // the README on GitHub's white: the same gloom, fading to white at the edges
+  ...THEMES.light, key: "light-embed", glyphGround: true, edge: [255, 255, 255, 1], ground: [40, 46, 44],
 };
 for (const t of [THEMES.dark, THEMES.light, THEMES.dark.embed, THEMES.light.embed]) {
   t.css = [];
@@ -79,7 +77,6 @@ export function mount(canvas, opts = {}) {
   let ghosts = [];
   const ripples = [];
   let avoidRects = [];
-  let stars = [];
   const ptr = { x: -1e5, y: -1e5, lastMove: -1e9, light: 0 };
   let time = 0, flash = 0, nextFlash = 14;
   let caches = {};
@@ -109,9 +106,6 @@ export function mount(canvas, opts = {}) {
     buildGround();
     caches = {};
     prewarm();
-    stars = [];
-    const sr = rng(seed + 9);
-    for (let n = Math.round(W * H / 9000); n > 0; n--) stars.push([sr() * W, sr() * horizon * 0.62, sr() * TAU, sr()]);
 
     if (rec) ghosts = recordCast();
     else if (!ghosts.length) {
@@ -212,19 +206,6 @@ export function mount(canvas, opts = {}) {
       const up = b.createLinearGradient(0, 0, 0, horizon);
       up.addColorStop(0, rgba(pal.skyTop)); up.addColorStop(1, rgba(pal.skyTop, 0));
       b.fillStyle = up; b.fillRect(0, 0, W, horizon);
-    }
-    if (pal.moon) { // a pale moon behind the haze, high on the right
-      const mx = W * 0.76, my = H * 0.16, mr = S * 0.042;
-      const halo = b.createRadialGradient(mx, my, mr * 0.8, mx, my, mr * 7);
-      halo.addColorStop(0, rgba(pal.moon, 0.16)); halo.addColorStop(1, rgba(pal.moon, 0));
-      b.fillStyle = halo; b.fillRect(mx - mr * 7, my - mr * 7, mr * 14, mr * 14);
-      const disc = b.createRadialGradient(mx - mr * 0.3, my - mr * 0.3, mr * 0.1, mx, my, mr);
-      disc.addColorStop(0, rgba(pal.moon, 0.95)); disc.addColorStop(1, rgba(pal.moon.map((c) => c * 0.82), 0.9));
-      b.fillStyle = disc; b.beginPath(); b.arc(mx, my, mr, 0, TAU); b.fill();
-      b.fillStyle = rgba(pal.moon.map((c) => c * 0.78), 0.26); // a few faint seas
-      for (const [ox, oy, rr] of [[-0.3, -0.15, 0.28], [0.25, 0.2, 0.22], [0.05, -0.45, 0.14]]) {
-        b.beginPath(); b.arc(mx + ox * mr, my + oy * mr, rr * mr, 0, TAU); b.fill();
-      }
     }
     const sky = b.createLinearGradient(0, horizon - S * 0.55, 0, horizon + S * 0.05);
     sky.addColorStop(0, rgba(pal.sky, 0)); sky.addColorStop(1, rgba(pal.sky, 1));
@@ -674,13 +655,6 @@ export function mount(canvas, opts = {}) {
       }
     }
 
-    if (pal.star) { // faint stars that slowly breathe
-      for (const [x, y, ph, b2] of stars) {
-        const a = (0.18 + 0.5 * b2) * (0.55 + 0.45 * Math.sin(t * (0.6 + b2) + ph));
-        ctx.fillStyle = rgba(pal.star, a);
-        ctx.fillText(b2 > 0.93 ? "+" : ".", x, y);
-      }
-    }
     for (const rp of ripples) {
       const age = t - rp.t0, rad = 14 + age * 90, a = 1 - age / 2.6;
       if (a <= 0) continue;

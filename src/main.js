@@ -27,7 +27,7 @@ if (params.has("record")) {
   function applyTheme(isLight) {
     root.dataset.theme = isLight ? "light" : "dark";
     themeButton.setAttribute("aria-checked", String(isLight));
-    document.querySelector('meta[name="theme-color"]').setAttribute("content", isLight ? "#e5e7eb" : "#0a0a0c");
+    document.querySelector('meta[name="theme-color"]').setAttribute("content", isLight ? "#a4aaa6" : "#070808");
     sky.setTheme(isLight);
   }
 
