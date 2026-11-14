@@ -24,7 +24,8 @@ const GL = 32, FL = 16; // ghost / fog colour levels
 const THEMES = {
   dark: {
     key: "dark",
-    page: [10, 10, 12], edge: [0, 0, 0, 0.82], sky: [40, 41, 47],
+    page: [10, 10, 12], skyTop: [12, 15, 26], edge: [0, 0, 0, 0.82], sky: [44, 46, 58],
+    moon: [214, 219, 230], star: [196, 204, 224],
     fog: [124, 126, 134], ground: [6, 6, 8], groundEdge: [92, 94, 102],
     ghostLo: [70, 72, 82], ghostHi: [232, 236, 242], glow: [150, 160, 182], glowA: 0.42, blend: "lighter",
     socket: null, ripple: [196, 198, 206], flash: [190, 198, 222],
@@ -78,6 +79,7 @@ export function mount(canvas, opts = {}) {
   let ghosts = [];
   const ripples = [];
   let avoidRects = [];
+  let stars = [];
   const ptr = { x: -1e5, y: -1e5, lastMove: -1e9, light: 0 };
   let time = 0, flash = 0, nextFlash = 14;
   let caches = {};
@@ -107,6 +109,9 @@ export function mount(canvas, opts = {}) {
     buildGround();
     caches = {};
     prewarm();
+    stars = [];
+    const sr = rng(seed + 9);
+    for (let n = Math.round(W * H / 9000); n > 0; n--) stars.push([sr() * W, sr() * horizon * 0.62, sr() * TAU, sr()]);
 
     if (rec) ghosts = recordCast();
     else if (!ghosts.length) {
@@ -207,6 +212,19 @@ export function mount(canvas, opts = {}) {
       const up = b.createLinearGradient(0, 0, 0, horizon);
       up.addColorStop(0, rgba(pal.skyTop)); up.addColorStop(1, rgba(pal.skyTop, 0));
       b.fillStyle = up; b.fillRect(0, 0, W, horizon);
+    }
+    if (pal.moon) { // a pale moon behind the haze, high on the right
+      const mx = W * 0.76, my = H * 0.16, mr = S * 0.042;
+      const halo = b.createRadialGradient(mx, my, mr * 0.8, mx, my, mr * 7);
+      halo.addColorStop(0, rgba(pal.moon, 0.16)); halo.addColorStop(1, rgba(pal.moon, 0));
+      b.fillStyle = halo; b.fillRect(mx - mr * 7, my - mr * 7, mr * 14, mr * 14);
+      const disc = b.createRadialGradient(mx - mr * 0.3, my - mr * 0.3, mr * 0.1, mx, my, mr);
+      disc.addColorStop(0, rgba(pal.moon, 0.95)); disc.addColorStop(1, rgba(pal.moon.map((c) => c * 0.82), 0.9));
+      b.fillStyle = disc; b.beginPath(); b.arc(mx, my, mr, 0, TAU); b.fill();
+      b.fillStyle = rgba(pal.moon.map((c) => c * 0.78), 0.26); // a few faint seas
+      for (const [ox, oy, rr] of [[-0.3, -0.15, 0.28], [0.25, 0.2, 0.22], [0.05, -0.45, 0.14]]) {
+        b.beginPath(); b.arc(mx + ox * mr, my + oy * mr, rr * mr, 0, TAU); b.fill();
+      }
     }
     const sky = b.createLinearGradient(0, horizon - S * 0.55, 0, horizon + S * 0.05);
     sky.addColorStop(0, rgba(pal.sky, 0)); sky.addColorStop(1, rgba(pal.sky, 1));
@@ -361,6 +379,16 @@ export function mount(canvas, opts = {}) {
     const idle = time - ptr.lastMove;
     ptr.light += ((idle < 3 && ptr.x > -1e4 ? 1 : 0) - ptr.light) * Math.min(1, dt * 2);
     population(dt);
+    if (idle > 1 && ptr.x > -1e4) {
+      const free = ghosts.filter((g) => g.K.face && !g.K.passer && !g.leaving && (g.mood || "wander") === "wander" && !(g.cool > 0));
+      const busy = ghosts.filter((g) => g.mood === "approach" || g.mood === "linger").length;
+      free.sort((a, b) => Math.hypot(a.x - ptr.x, a.y - ptr.y) - Math.hypot(b.x - ptr.x, b.y - ptr.y));
+      for (const g of free.slice(0, Math.max(0, 2 - busy))) {
+        if (Math.hypot(g.x - ptr.x, g.y - ptr.y) > S * 1.1) break;
+        const other = ghosts.find((o) => o !== g && (o.mood === "approach" || o.mood === "linger"));
+        g.mood = "approach"; g.side = other ? -other.side : g.x < ptr.x ? -1 : 1; // one on each side
+      }
+    }
     for (const g of ghosts) {
       const r = radius(g);
       g.age += dt;
@@ -386,7 +414,8 @@ export function mount(canvas, opts = {}) {
         const l = b.left - r * 1.3, rt = b.right + r * 1.3, tp = b.top - r * 3.2, bt = b.bottom + r * 1.1;
         if (g.x > l && g.x < rt && g.y > tp && g.y < bt) {
           const pushX = g.x - l < rt - g.x ? -(g.x - l) : rt - g.x, pushY = g.y - tp < bt - g.y ? -(g.y - tp) : bt - g.y;
-          if (Math.abs(pushX) < Math.abs(pushY)) tx += pushX * 1.5; else ty += pushY * 1.5;
+          const soft = g.mood === "approach" || g.mood === "linger" ? 0.35 : 1.5;
+          if (Math.abs(pushX) < Math.abs(pushY)) tx += pushX * soft; else ty += pushY * soft;
         }
       }
       if (!g.leaving && !g.K.passer) { // soft edges: they may brush past, but turn back
@@ -396,14 +425,32 @@ export function mount(canvas, opts = {}) {
         if (g.y < r * 0.8) ty += (r * 0.8 - g.y) * 0.4;
         if (g.y > horizon - r * 0.6) ty -= (g.y - (horizon - r * 0.6)) * 0.4;
       }
+      // curiosity: drawn to a cursor that rests, it comes close, lingers, then turns and goes
       const dx = ptr.x - g.x, dy = ptr.y - g.y, d = Math.hypot(dx, dy);
-      const near = g.K.face && idle > 0.6 && idle < 10 && d < S * 0.55;
-      if (near && d > r * 3) { const k = 0.7 * (1 - d / (S * 0.55)); tx += (dx / d) * 34 * k; ty += (dy / d) * 34 * k; }
-      g.reach += ((near && d < S * 0.3 ? 1 : 0) - g.reach) * Math.min(1, dt * 1.5);
+      g.cool = Math.max(0, (g.cool || 0) - dt);
+      if (g.mood === "approach" || g.mood === "linger") {
+        if (idle < 0.15 || ptr.x < -1e4) { g.mood = "retreat"; g.moodT = 2.4; g.cool = 7; } // the cursor moved away: it shies off
+      }
+      if (g.mood === "approach" || g.mood === "linger") {
+        // hold off to one side of the cursor, a little above it, looking at it
+        const ox = ptr.x + g.side * r * 1.9, oy = ptr.y - r * 0.5;
+        const ex = ox - g.x, ey = oy - g.y, ed = Math.hypot(ex, ey) || 1;
+        const want = g.mood === "approach" ? Math.min(85, ed * 1.1) : Math.min(25, ed * 1.5);
+        tx = tx * 0.15 + (ex / ed) * want; ty = ty * 0.15 + (ey / ed) * want;
+        if (g.mood === "approach" && ed < r * 0.9) { g.mood = "linger"; g.moodT = 2.6 + Math.random() * 1.6; }
+        if (g.mood === "linger" && (g.moodT -= dt) <= 0) { g.mood = "retreat"; g.moodT = 2.6; g.cool = 9; }
+      } else if (g.mood === "retreat") { // turns away and drifts off, a little fainter
+        const ad = d || 1;
+        tx = tx * 0.3 - (dx / ad) * 60; ty = ty * 0.3 - (dy / ad) * 40 - 12;
+        if ((g.moodT -= dt) <= 0) g.mood = "wander";
+      }
+      const near = g.mood === "approach" || g.mood === "linger";
+      g.reach += ((g.mood === "linger" ? 1 : near && d < r * 4 ? 0.5 : 0) - g.reach) * Math.min(1, dt * 1.8);
       for (const o of ghosts) {
         if (o === g) continue;
         const ox = g.x - o.x, oy = g.y - o.y, od = Math.hypot(ox, oy) || 1, room = (r + radius(o)) * 1.6;
-        if (od < room) { tx += (ox / od) * (room - od) * 0.8; ty += (oy / od) * (room - od) * 0.8; }
+        const give = (g.mood === "approach" || g.mood === "linger") ? 0.25 : 0.8;
+        if (od < room) { tx += (ox / od) * (room - od) * give; ty += (oy / od) * (room - od) * give; }
       }
       g.vx += (tx - g.vx) * Math.min(1, dt * 0.7);
       g.vy += (ty - g.vy) * Math.min(1, dt * 0.7);
@@ -437,7 +484,8 @@ export function mount(canvas, opts = {}) {
       const flickering = g.flick > 0; // arrivals simply fade in
       g.glitch = Math.max(flickering ? 1 : 0, g.startle * 0.8);
       // a flicker is a slow waver in strength, never a hard on/off strobe
-      g.vis = life * (flickering ? 0.72 + 0.28 * Math.cos(time * 9 + g.id) : 1) * (1 - 0.85 * (g.scatter || 0));
+      g.fadeMood = (g.fadeMood ?? 1) + ((g.mood === "retreat" ? 0.55 : 1) - (g.fadeMood ?? 1)) * Math.min(1, dt * 1.5);
+      g.vis = life * (flickering ? 0.72 + 0.28 * Math.cos(time * 9 + g.id) : 1) * (1 - 0.85 * (g.scatter || 0)) * g.fadeMood;
     }
     nextFlash -= dt;
     if (nextFlash <= 0) { flash = 1; nextFlash = 18 + Math.random() * 26; }
@@ -626,6 +674,13 @@ export function mount(canvas, opts = {}) {
       }
     }
 
+    if (pal.star) { // faint stars that slowly breathe
+      for (const [x, y, ph, b2] of stars) {
+        const a = (0.18 + 0.5 * b2) * (0.55 + 0.45 * Math.sin(t * (0.6 + b2) + ph));
+        ctx.fillStyle = rgba(pal.star, a);
+        ctx.fillText(b2 > 0.93 ? "+" : ".", x, y);
+      }
+    }
     for (const rp of ripples) {
       const age = t - rp.t0, rad = 14 + age * 90, a = 1 - age / 2.6;
       if (a <= 0) continue;
@@ -729,7 +784,12 @@ export function mount(canvas, opts = {}) {
 
   /** A pointer event's position in the canvas's own pixels. */
   const at = (e) => { const o = canvas.getBoundingClientRect(); return { x: e.clientX - o.left, y: e.clientY - o.top }; };
-  const onMove = (e) => { const p = at(e); ptr.x = p.x; ptr.y = p.y; ptr.lastMove = time; };
+  const onMove = (e) => {
+    const p = at(e);
+    ptr.x = p.x; ptr.y = p.y;
+    // a hand resting on the mouse jitters; only a real move resets the stillness
+    if (Math.hypot(p.x - (ptr.rx ?? -1e5), p.y - (ptr.ry ?? -1e5)) > 24) { ptr.rx = p.x; ptr.ry = p.y; ptr.lastMove = time; }
+  };
   const onLeave = () => { ptr.x = ptr.y = -1e5; };
   const onDown = (e) => {
     if (e.target.closest && e.target.closest("a, button, input, textarea, [data-sky-ignore]")) return;
@@ -779,6 +839,9 @@ export function mount(canvas, opts = {}) {
   raf = requestAnimationFrame(tick);
 
   return {
+    /** Testing: run the live simulation for `sec` seconds at once (also when the tab is hidden). */
+    simulate(sec, dt = 1 / 60) { for (let t = 0; t < sec; t += dt) advance(dt, false); drawScene(time); },
+    debug() { return ghosts.map((g) => ({ k: g.kind, x: g.x | 0, y: g.y | 0, mood: g.mood || "wander", vis: +g.vis.toFixed(2) })); },
     measure,
     /** Draw right now, so a view transition captures the new theme. */
     redraw() { drawScene(time); },

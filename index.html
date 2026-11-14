@@ -58,6 +58,8 @@
   :root[data-theme="light"] nav button .moon { display: block; }
   :root[data-theme="light"] nav button .sun { display: none; }
 
+  /* a soft halo in the page colour keeps text readable when a ghost drifts behind it */
+  nav, .quote, .intro, .entries { text-shadow: 0 0 2px var(--background-color), 0 0 12px var(--background-color), 0 0 22px var(--background-color); }
   main { position: relative; z-index: 20; height: 100%; pointer-events: none; }
   main :is(a, button, .cite) { pointer-events: auto; }
   .view { position: absolute; inset: 0; display: flex; opacity: 0; visibility: hidden; transform: translateY(10px);
