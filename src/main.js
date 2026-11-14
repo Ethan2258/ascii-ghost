@@ -27,11 +27,11 @@ if (params.has("record")) {
   function applyTheme(isLight) {
     root.dataset.theme = isLight ? "light" : "dark";
     themeButton.setAttribute("aria-checked", String(isLight));
-    document.querySelector('meta[name="theme-color"]').setAttribute("content", isLight ? "#f4f2ee" : "#0a0a0c");
+    document.querySelector('meta[name="theme-color"]').setAttribute("content", isLight ? "#e0e5ec" : "#0a0a0c");
     sky.setTheme(isLight);
   }
 
-  /** The browser snapshots the old page; the new one (canvas still running) is revealed in a growing circle. */
+  /** The browser snapshots the old page and cross-fades it into the new one, with the canvas still running. */
   let switching = false;
   function switchTheme(x, y) {
     if (switching) return;
@@ -41,13 +41,7 @@ if (params.has("record")) {
     switching = true;
     root.dataset.transition = "theme";
     const vt = document.startViewTransition(() => { applyTheme(isLight); sky.redraw(); });
-    vt.ready.then(() => {
-      const r = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
-      root.animate(
-        { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${r}px at ${x}px ${y}px)`] },
-        { duration: 850, easing: "cubic-bezier(.7, 0, .3, 1)", pseudoElement: "::view-transition-new(root)" },
-      );
-    }).catch(() => {});
+    vt.ready.catch(() => {}); // the cross-fade itself is pure CSS (::view-transition-old/new)
     vt.finished.finally(() => { delete root.dataset.transition; switching = false; });
   }
 

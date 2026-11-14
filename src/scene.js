@@ -29,12 +29,14 @@ const THEMES = {
     ghostLo: [70, 72, 82], ghostHi: [232, 236, 242], glow: [150, 160, 182], glowA: 0.42, blend: "lighter",
     socket: null, ripple: [196, 198, 206], flash: [190, 198, 222],
   },
+  // light: a pale blue-grey morning fog; the ghosts are the dark version turned to shadow,
+  // with the fog showing through their faces, over a slate graveyard that runs to the bottom
   light: {
-    key: "light", ink: true,
-    page: [244, 242, 238], edge: [112, 106, 98, 0.2], sky: [226, 224, 220],
-    fog: [150, 148, 144], ground: [96, 94, 92], groundEdge: [150, 148, 144],
-    ghostLo: [214, 212, 207], ghostHi: [38, 38, 42], glow: [255, 255, 255], glowA: 0.7, blend: "source-over",
-    socket: [30, 30, 34], ripple: [70, 70, 74], flash: [255, 255, 255],
+    key: "light",
+    page: [224, 229, 236], edge: [120, 130, 148, 0.3], sky: [242, 244, 248],
+    fog: [128, 136, 150], ground: [92, 100, 116], groundEdge: [140, 148, 162],
+    ghostLo: [176, 183, 196], ghostHi: [30, 34, 44], glow: [64, 72, 90], glowA: 0.3, blend: "source-over",
+    socket: null, ripple: [60, 66, 80], flash: [255, 255, 255],
   },
 };
 THEMES.dark.embed = {
@@ -43,12 +45,9 @@ THEMES.dark.embed = {
 };
 // README on GitHub's light theme: a pale blue-grey morning fog that fades to white at the edges,
 // and the dark version's ghosts turned to translucent shadow
-THEMES.light.embed = {
-  ...THEMES.light, key: "light-embed", ink: false, glyphGround: true,
-  page: [224, 229, 236], edge: [255, 255, 255, 1], sky: [238, 241, 245],
-  fog: [128, 136, 150], ground: [70, 76, 90], groundEdge: [120, 128, 142],
-  ghostLo: [176, 183, 196], ghostHi: [30, 34, 44], glow: [64, 72, 90], glowA: 0.3, blend: "source-over",
-  socket: null, // the face shows the fog through it, like the dark version in reverse
+THEMES.light.embed = { // the README on GitHub's white: same fog, fading to white at the edges
+  ...THEMES.light, key: "light-embed", glyphGround: true,
+  edge: [255, 255, 255, 1], sky: [238, 241, 245], ground: [70, 76, 90], groundEdge: [120, 128, 142],
 };
 for (const t of [THEMES.dark, THEMES.light, THEMES.dark.embed, THEMES.light.embed]) {
   t.css = [];
@@ -96,7 +95,7 @@ export function mount(canvas, opts = {}) {
     ch = Math.round(cw * 1.35);
     cols = Math.ceil(W / cw);
     rows = Math.ceil(H / ch);
-    horizon = H * (H > W ? 0.9 : 0.86);
+    horizon = H * (H > W ? 0.92 : 0.9);
     const n = cols * rows;
     dens = new Float32Array(n); trail = new Float32Array(n); hole = new Float32Array(n); avoid = new Float32Array(n);
     opB = new Uint8Array(n); opK = new Uint32Array(n); opC = new Uint8Array(n); order = new Uint32Array(n);
@@ -201,7 +200,13 @@ export function mount(canvas, opts = {}) {
       }
       b.fillStyle = rgba(pal.ground, Math.min(1, gd * 1.3));
       b.fillRect(i * cw - 0.3, j * ch - 0.3, cw + 0.6, ch + 0.6);
-      if (gd < 0.75) { b.fillStyle = rgba(pal.groundEdge, 0.7); b.fillText(gd < 0.45 ? "." : ":", (i + 0.5) * cw, (j + 0.5) * ch); }
+      if (gd < 0.75) { b.fillStyle = rgba(pal.groundEdge, 0.7); b.fillText(gd < 0.45 ? "." : ":", (i + 0.5) * cw, (j + 0.5) * ch); continue; }
+      // earth: a sparse scatter of glyphs, thicker near the crest, so the ground is not a flat slab
+      const depthBelow = j - hillRow[i], h = hash3(i, j, 21);
+      if (depthBelow >= 0 && h < 0.5 - Math.min(0.32, depthBelow * 0.05)) {
+        b.fillStyle = rgba(pal.groundEdge, 0.16 + 0.22 * Math.max(0, 1 - depthBelow / 6));
+        b.fillText(depthBelow < 2 && h < 0.18 ? (h < 0.09 ? "\"" : ",") : h < 0.2 ? "." : h < 0.32 ? ":" : h < 0.42 ? "-" : "'", (i + 0.5) * cw, (j + 0.5) * ch);
+      }
     }
     const [vg, v] = mk();
     const grad = embed ? v.createRadialGradient(W / 2, H * 0.5, S * 0.55, W / 2, H * 0.5, W * 0.56)
