@@ -33,10 +33,10 @@ const THEMES = {
   // with the fog showing through their faces, over a slate graveyard that runs to the bottom
   light: {
     key: "light",
-    page: [224, 229, 236], edge: [120, 130, 148, 0.3], sky: [242, 244, 248],
-    fog: [128, 136, 150], ground: [92, 100, 116], groundEdge: [140, 148, 162],
-    ghostLo: [176, 183, 196], ghostHi: [30, 34, 44], glow: [64, 72, 90], glowA: 0.3, blend: "source-over",
-    socket: null, ripple: [60, 66, 80], flash: [255, 255, 255],
+    page: [229, 231, 235], skyTop: [203, 210, 222], sky: [245, 238, 229], edge: [126, 132, 152, 0.26],
+    fog: [118, 125, 144], ground: [84, 86, 106], groundEdge: [134, 138, 158],
+    ghostLo: [178, 184, 198], ghostHi: [26, 30, 44], glow: [58, 66, 92], glowA: 0.3, blend: "source-over",
+    socket: null, ripple: [62, 66, 86], flash: [255, 255, 255],
   },
 };
 THEMES.dark.embed = {
@@ -106,6 +106,7 @@ export function mount(canvas, opts = {}) {
     glowImg = gctx.createImageData(cols, rows);
     buildGround();
     caches = {};
+    prewarm();
 
     if (rec) ghosts = recordCast();
     else if (!ghosts.length) {
@@ -166,14 +167,34 @@ export function mount(canvas, opts = {}) {
 
   /** Sky, graves and the vignette never move: paint them once per theme. */
   /** Break up 8-bit gradient steps (they show as rings on a dark screen) with a little noise. */
-  function dither(c, alpha) {
-    const x = c.getContext("2d"), im = x.getImageData(0, 0, c.width, c.height), d = im.data;
-    for (let i = 0; i < d.length; i += 4) {
-      const n = (Math.random() + Math.random() - 1) * 2.2;
-      if (alpha) { if (d[i + 3]) d[i + 3] += n; }
-      else { d[i] += n; d[i + 1] += n; d[i + 2] += n; }
+  // A small tile of faint black and white specks, laid over the cached gradients: it breaks
+  // up their 8-bit steps (which show as rings on a dark screen) at almost no cost.
+  let noiseTile = null;
+  function dither(c) {
+    if (!noiseTile) {
+      noiseTile = document.createElement("canvas");
+      noiseTile.width = noiseTile.height = 128;
+      const nx = noiseTile.getContext("2d"), im = nx.createImageData(128, 128), d = im.data;
+      for (let i = 0; i < d.length; i += 4) {
+        d[i] = d[i + 1] = d[i + 2] = Math.random() < 0.5 ? 0 : 255;
+        d[i + 3] = (Math.random() * 7) | 0;
+      }
+      nx.putImageData(im, 0, 0);
     }
-    x.putImageData(im, 0, 0);
+    const x = c.getContext("2d");
+    x.save();
+    x.setTransform(1, 0, 0, 1, 0, 0);
+    x.fillStyle = x.createPattern(noiseTile, "repeat");
+    x.fillRect(0, 0, c.width, c.height);
+    x.restore();
+  }
+
+  /** Paint both themes' static layers while the page is idle, so switching theme never stalls. */
+  function prewarm() {
+    if (embed) return;
+    const idle = window.requestIdleCallback || ((f) => setTimeout(f, 200));
+    idle(() => cache(THEMES.dark));
+    idle(() => cache(THEMES.light));
   }
 
   function cache(pal) {
@@ -182,6 +203,11 @@ export function mount(canvas, opts = {}) {
     const mk = () => { const c = document.createElement("canvas"); c.width = canvas.width; c.height = canvas.height; const x = c.getContext("2d"); x.scale(dpr, dpr); return [c, x]; };
     const [bg, b] = mk();
     b.fillStyle = rgba(pal.page); b.fillRect(0, 0, W, H);
+    if (pal.skyTop) { // light: a cooler sky overhead, warming toward the horizon
+      const up = b.createLinearGradient(0, 0, 0, horizon);
+      up.addColorStop(0, rgba(pal.skyTop)); up.addColorStop(1, rgba(pal.skyTop, 0));
+      b.fillStyle = up; b.fillRect(0, 0, W, horizon);
+    }
     const sky = b.createLinearGradient(0, horizon - S * 0.55, 0, horizon + S * 0.05);
     sky.addColorStop(0, rgba(pal.sky, 0)); sky.addColorStop(1, rgba(pal.sky, 1));
     b.fillStyle = sky; b.fillRect(0, horizon - S * 0.55, W, S * 0.6);
@@ -221,8 +247,8 @@ export function mount(canvas, opts = {}) {
       top.addColorStop(0, rgba(pal.edge, 1)); top.addColorStop(1, rgba(pal.edge, 0));
       v.fillStyle = top; v.fillRect(0, 0, W, H * 0.12);
     }
-    dither(bg, false);
-    dither(vg, true);
+    dither(bg);
+    dither(vg);
     return (caches[key] = { bg, vg });
   }
 

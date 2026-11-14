@@ -28,7 +28,7 @@
     color-scheme: dark;
   }
   :root[data-theme="light"] {
-    --background-color: #e0e5ec;
+    --background-color: #e5e7eb;
     --foreground-color: #262628;
     --accent: #6d6f76;
     color-scheme: light;
@@ -67,10 +67,11 @@
                        transition: opacity .55s ease .12s, transform .55s cubic-bezier(.2,.7,.2,1) .12s, filter .55s ease .12s; }
   /* theme switch: the browser snapshots the old page and the new one grows out of the button */
   ::view-transition-old(root), ::view-transition-new(root) { mix-blend-mode: normal; }
-  ::view-transition-old(root) { z-index: 1; animation: theme-out .75s cubic-bezier(.4, 0, .2, 1) both; }
-  ::view-transition-new(root) { z-index: 2; animation: theme-in .75s cubic-bezier(.4, 0, .2, 1) both; }
-  @keyframes theme-out { to { opacity: 0; filter: blur(6px); } }
-  @keyframes theme-in { from { opacity: 0; filter: blur(6px); } }
+  /* opacity only: it stays on the compositor, so the fade never stutters */
+  ::view-transition-old(root) { z-index: 1; animation: theme-out .6s cubic-bezier(.4, 0, .2, 1) both; }
+  ::view-transition-new(root) { z-index: 2; animation: theme-in .6s cubic-bezier(.4, 0, .2, 1) both; }
+  @keyframes theme-out { to { opacity: 0; } }
+  @keyframes theme-in { from { opacity: 0; } }
   :root[data-transition] *, :root[data-transition] { transition: none !important; }
 
   .hero { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; gap: 40px;
