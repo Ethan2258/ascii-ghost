@@ -4,6 +4,11 @@
 // Static layers (sky, graves, vignette) are painted once per theme and size.
 //
 //   mount(canvas, { theme: "dark" | "light" })                    live page
+//
+// The canvas may sit anywhere on the page and at any size: it is laid out to its
+// own box, follows that box as it changes, and stops drawing while it is scrolled
+// out of sight. Ghosts keep clear of [data-sky-avoid] elements and fade, without
+// being pushed away, under the text of [data-sky-dim] ones. destroy() stops it.
 //   mount(canvas, { record: { width, height, frames, fps } })     deterministic seamless loop,
 //                                                                 drive it with frame(i)
 
@@ -601,17 +606,39 @@ export function mount(canvas, opts = {}) {
     if (c.vg) ctx.drawImage(c.vg, 0, 0);
   }
 
+  /** Mark the cells under a box (canvas pixels) as dimmed, with a little slack round it. */
+  function dimCells(r, padX, padY) {
+    const i0 = Math.max(0, Math.floor((r.left - padX) / cw)), i1 = Math.min(cols - 1, Math.floor((r.right + padX) / cw));
+    const j0 = Math.max(0, Math.floor((r.top - padY) / ch)), j1 = Math.min(rows - 1, Math.floor((r.bottom + padY) / ch));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) avoid[j * cols + i] = 1;
+  }
+
+  /**
+   * Read the page: [data-sky-avoid] boxes the ghosts steer clear of (and fade
+   * under), [data-sky-dim] text they may cross but fade beneath, line by line, so
+   * the empty space beside a short line stays clear. Boxes are taken relative to
+   * the canvas, which need not sit at the window's corner.
+   */
   function measure() {
     if (!avoid) return;
     avoid.fill(0);
     avoidRects = [];
+    const o = canvas.getBoundingClientRect();
+    const local = (r) => ({ left: r.left - o.left, right: r.right - o.left, top: r.top - o.top, bottom: r.bottom - o.top, width: r.width, height: r.height });
+    const range = document.createRange();
+    for (const el of document.querySelectorAll("[data-sky-dim]")) {
+      const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      for (let t; (t = walk.nextNode());) {
+        if (!t.nodeValue.trim()) continue;
+        range.selectNodeContents(t);
+        for (const rr of range.getClientRects()) if (rr.width > 1 && rr.height > 1) dimCells(local(rr), 6, 3);
+      }
+    }
     for (const el of document.querySelectorAll("[data-sky-avoid]")) {
-      const r = el.getBoundingClientRect();
+      const r = local(el.getBoundingClientRect());
       if (!r.width || !r.height) continue;
       avoidRects.push(r);
-      const i0 = Math.max(0, Math.floor((r.left - 8) / cw)), i1 = Math.min(cols - 1, Math.floor((r.right + 8) / cw));
-      const j0 = Math.max(0, Math.floor((r.top - 4) / ch)), j1 = Math.min(rows - 1, Math.floor((r.bottom + 4) / ch));
-      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) avoid[j * cols + i] = 1;
+      dimCells(r, 8, 4);
     }
   }
 
@@ -640,20 +667,42 @@ export function mount(canvas, opts = {}) {
 
   // --------------------------------------------------------------- live
 
-  const resize = () => layout(canvas.clientWidth, canvas.clientHeight, Math.min(2, devicePixelRatio || 1));
+  // Laid out to the canvas's own box, and again whenever that box changes size --
+  // the window resizing, or the page around an embedded canvas reflowing.
+  let sized = "";
+  const resize = () => {
+    const w = canvas.clientWidth, h = canvas.clientHeight, r = Math.min(2, devicePixelRatio || 1);
+    if (w < 1 || h < 1 || `${w}x${h}@${r}` === sized) return;
+    sized = `${w}x${h}@${r}`;
+    layout(w, h, r);
+  };
   resize();
   let resizeTimer = 0;
-  addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(resize, 80); });
+  const onResize = () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(resize, 80); };
+  const boxObserver = typeof ResizeObserver === "function" ? new ResizeObserver(onResize) : null;
+  if (boxObserver) boxObserver.observe(canvas);
+  addEventListener("resize", onResize); // devicePixelRatio changes (zoom) do not resize the box
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { caches = {}; });
 
-  addEventListener("pointermove", (e) => { ptr.x = e.clientX; ptr.y = e.clientY; ptr.lastMove = time; }, { passive: true });
-  document.addEventListener("pointerleave", () => { ptr.x = ptr.y = -1e5; });
-  addEventListener("pointerdown", (e) => {
+  // Out of sight -- scrolled away, or display:none -- it neither steps nor draws.
+  let inView = true;
+  const sight = typeof IntersectionObserver === "function"
+    ? new IntersectionObserver(([e]) => { inView = e.isIntersecting; if (inView) measure(); })
+    : null;
+  if (sight) sight.observe(canvas);
+
+  /** A pointer event's position in the canvas's own pixels. */
+  const at = (e) => { const o = canvas.getBoundingClientRect(); return { x: e.clientX - o.left, y: e.clientY - o.top }; };
+  const onMove = (e) => { const p = at(e); ptr.x = p.x; ptr.y = p.y; ptr.lastMove = time; };
+  const onLeave = () => { ptr.x = ptr.y = -1e5; };
+  const onDown = (e) => {
     if (e.target.closest && e.target.closest("a, button, input, textarea, [data-sky-ignore]")) return;
     if (String(getSelection && getSelection())) return;
-    ripples.push({ x: e.clientX, y: e.clientY, t0: time });
+    const p = at(e);
+    if (p.x < 0 || p.y < 0 || p.x > W || p.y > H) return; // a click outside the canvas
+    ripples.push({ x: p.x, y: p.y, t0: time });
     for (const g of ghosts) {
-      const dx = g.x - e.clientX, dy = g.y - e.clientY, d = Math.hypot(dx, dy) || 1, reach = S * 0.55;
+      const dx = g.x - p.x, dy = g.y - p.y, d = Math.hypot(dx, dy) || 1, reach = S * 0.55;
       if (d > reach) continue;
       const k = 1 - d / reach;
       g.startle = Math.max(g.startle, 0.5 + 0.5 * k);
@@ -662,7 +711,10 @@ export function mount(canvas, opts = {}) {
       g.hd = Math.atan2(dy, dx);
       g.flick = 0.5;
     }
-  });
+  };
+  addEventListener("pointermove", onMove, { passive: true });
+  document.addEventListener("pointerleave", onLeave);
+  addEventListener("pointerdown", onDown);
 
   let lastNow = performance.now();
   const frameTimes = [];
@@ -682,14 +734,30 @@ export function mount(canvas, opts = {}) {
     frameTimes.push(performance.now() - t0);
     if (frameTimes.length > 120) frameTimes.shift();
   }
-  function tick(now) { requestAnimationFrame(tick); frame(now); }
-  requestAnimationFrame(tick);
+  let raf = 0;
+  function tick(now) {
+    raf = requestAnimationFrame(tick);
+    if (!inView) { lastNow = now; return; } // and no catching up on return
+    frame(now);
+  }
+  raf = requestAnimationFrame(tick);
 
   return {
     measure,
     /** Draw right now, so a view transition captures the new theme. */
     redraw() { drawScene(time); },
     setTheme(light) { P = THEMES[light ? "light" : "dark"]; },
+    /** Stop for good: the loop, the observers and every listener. */
+    destroy() {
+      cancelAnimationFrame(raf);
+      clearTimeout(resizeTimer);
+      boxObserver?.disconnect();
+      sight?.disconnect();
+      removeEventListener("resize", onResize);
+      removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerleave", onLeave);
+      removeEventListener("pointerdown", onDown);
+    },
     stats() { const a = [...frameTimes].sort((x, y) => x - y); return { median: a[a.length >> 1], p95: a[Math.floor(a.length * 0.95)] }; },
   };
 }

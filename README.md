@@ -10,6 +10,23 @@
 - 天空、墓碑和暗角每个主题只绘制一次，字符按颜色批量绘制，60/120Hz 下单帧约 4ms
 - 明暗主题切换用 View Transitions 从按钮处圆形展开；尊重 `prefers-reduced-motion`
 
+## 嵌入到别的页面
+
+`src/` 可以直接拿去用，画布放在页面任何位置、任何大小都行：
+
+```js
+import { mount } from "./src/scene.js";
+const sky = mount(document.querySelector("canvas"), { theme: "dark" });
+sky.setTheme(true);   // 换成浅色；配合 View Transitions 时先调用 sky.redraw()
+sky.measure();        // 页面布局变了（滚动、加载完数据）之后重新读取文字位置
+sky.destroy();        // 停掉动画、观察器和所有事件监听
+```
+
+- 画布按自己的尺寸排版，尺寸变化时自动重排；滚出视野时暂停，不占 CPU
+- `data-sky-avoid`：幽灵绕开这个元素（并在下面变淡），适合导航、按钮这类小块
+- `data-sky-dim`：幽灵可以从文字下面飘过，只是逐行变淡、不被推开，适合大段正文和数字
+- `data-sky-ignore`：在这个元素上点击不会吓散幽灵
+
 本地预览：
 
 ```bash
