@@ -3,7 +3,8 @@
 // below it thins into smoke, and the face is cut out as holes so it reads as hollow.
 import { clamp, smoothstep } from "./util.js";
 
-/** pose: { lean, wave, gape, eye, lookX, lookY, reach, face, arms, slim, tail } */
+/** pose: { lean, wave, gape, eye, lookX, lookY, reach, face, arms, slim, tail }
+ *  Returns the density; `wraithAt.hole` is how much eye or mouth was cut out at that point. */
 export function wraithAt(p, x, y) {
   // the shroud trails behind the motion and ripples, more the further down it hangs
   const k = clamp(y / 3, 0, 1.4);
@@ -34,7 +35,10 @@ export function wraithAt(p, x, y) {
     const th = 0.19 * (1 - t) + 0.05;
     d = Math.max(d, smoothstep(th * 1.8, th * 0.5, Math.sqrt(qx * qx + qy * qy)) * (0.7 - 0.3 * t));
   }
+  wraithAt.hole = 0;
   if (d < 0.01 || !p.face) return d;
+  const before = d;
+  let keep = 1;
 
   // eye sockets: big, set apart, tipped very slightly down at the outside
   for (let s = -1; s <= 1; s += 2) {
@@ -42,12 +46,15 @@ export function wraithAt(p, x, y) {
     const a = s * 0.14, ca = Math.cos(a), sa = Math.sin(a);
     const u = (ex * ca + ey * sa) / 0.21, v = (-ex * sa + ey * ca) / (0.33 * p.eye + 0.04);
     const e = u * u + v * v;
-    if (e < 1.7) d *= smoothstep(0.55, 1.7, e);
+    if (e < 1.7) keep *= smoothstep(0.55, 1.7, e);
   }
   // mouth: a tall, dark, open hole
   const mx = (sx - p.lookX * 0.05) / (0.12 + 0.05 * p.gape), my = (y - 0.5) / (0.2 + 0.16 * p.gape);
   const m = mx * mx + my * my;
-  if (m < 1.7) d *= smoothstep(0.55, 1.7, m);
+  if (m < 1.7) keep *= smoothstep(0.55, 1.7, m);
+  d *= keep;
+  // how much of a solid face was cut away here: a light theme paints these holes dark
+  wraithAt.hole = before > 0.3 ? (1 - keep) * before : 0;
   return d;
 }
 

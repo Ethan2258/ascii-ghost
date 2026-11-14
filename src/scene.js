@@ -13,28 +13,42 @@ import { wraithAt, WRAITH } from "./wraith.js";
 const CHARS = " .:-=+*#%@~"; // 1..9 is the density ramp, 10 is fog
 const GL = 32, FL = 16; // ghost / fog colour levels
 
+// Dark: a black night, pale glowing ghosts. Light: an overcast grey dusk, white ghosts with
+// dark hollow faces. Each has a variant for the README recording, drawn on GitHub's own page
+// colour (#0d1117 / #ffffff), where a white ghost would vanish.
 const THEMES = {
   dark: {
+    key: "dark",
     page: [10, 10, 12], edge: [0, 0, 0, 0.82], sky: [40, 41, 47],
-    embedPage: [13, 17, 23], fog: [124, 126, 134], embedGround: [120, 122, 132], ground: [6, 6, 8], groundEdge: [92, 94, 102],
+    fog: [124, 126, 134], ground: [6, 6, 8], groundEdge: [92, 94, 102],
     ghostLo: [70, 72, 82], ghostHi: [232, 236, 242], glow: [150, 160, 182], glowA: 0.42, blend: "lighter",
-    ripple: [196, 198, 206], flash: [190, 198, 222],
+    socket: null, ripple: [196, 198, 206], flash: [190, 198, 222],
   },
   light: {
-    page: [226, 225, 222], edge: [70, 70, 74, 0.38], sky: [200, 200, 204],
-    embedPage: [255, 255, 255], fog: [104, 104, 110], embedGround: [128, 128, 136], ground: [62, 62, 66], groundEdge: [96, 96, 102],
-    ghostLo: [150, 150, 156], ghostHi: [18, 18, 22], glow: [70, 70, 78], glowA: 0.3, blend: "source-over",
-    ripple: [60, 60, 66], flash: [255, 255, 255],
+    key: "light",
+    page: [200, 201, 204], edge: [58, 60, 66, 0.4], sky: [236, 236, 238],
+    fog: [250, 250, 252], ground: [52, 52, 57], groundEdge: [92, 92, 98],
+    ghostLo: [214, 214, 218], ghostHi: [104, 105, 114], glow: [255, 255, 255], glowA: 0.82, blend: "source-over",
+    socket: [24, 24, 28], ripple: [60, 60, 66], flash: [255, 255, 255],
   },
 };
-for (const t of Object.values(THEMES)) {
+THEMES.dark.embed = {
+  ...THEMES.dark, key: "dark-embed", page: [13, 17, 23], edge: null, sky: null, ground: [120, 122, 132], glowA: 0.36,
+};
+THEMES.light.embed = {
+  ...THEMES.light, key: "light-embed", page: [255, 255, 255], edge: null, sky: null, ground: [132, 132, 140],
+  fog: [150, 150, 158], ghostLo: [186, 186, 192], ghostHi: [40, 40, 46], glow: [120, 122, 132], glowA: 0.22,
+};
+for (const t of [THEMES.dark, THEMES.light, THEMES.dark.embed, THEMES.light.embed]) {
   t.css = [];
   for (let i = 0; i < GL; i++) {
     const k = i / (GL - 1);
     t.css.push(rgba(mixRgb(t.ghostLo, t.ghostHi, Math.pow(k, 0.75)), 0.18 + 0.82 * k));
   }
   for (let i = 0; i < FL; i++) t.css.push(rgba(t.fog, 0.04 + (i / (FL - 1)) * 0.5));
+  t.css.push(t.socket ? rgba(t.socket, 0.92) : "rgba(0,0,0,0)");
 }
+const SOCKET = GL + FL;
 
 export function mount(canvas, opts = {}) {
   const ctx = canvas.getContext("2d");
@@ -48,7 +62,7 @@ export function mount(canvas, opts = {}) {
   let P = THEMES[opts.theme === "light" ? "light" : "dark"];
 
   let W = 0, H = 0, S = 0, dpr = 1, cw = 9, ch = 12, cols = 0, rows = 0, horizon = 0;
-  let dens, trail, ground, hillRow, avoid, gcols = 0, grows = 0, fogGrid;
+  let dens, trail, hole, ground, hillRow, avoid, gcols = 0, grows = 0, fogGrid;
   let opB, opK, opC, counts, starts, order;
   let ghosts = [];
   const ripples = [];
@@ -72,9 +86,9 @@ export function mount(canvas, opts = {}) {
     rows = Math.ceil(H / ch);
     horizon = H * (H > W ? 0.9 : 0.86);
     const n = cols * rows;
-    dens = new Float32Array(n); trail = new Float32Array(n); avoid = new Float32Array(n);
+    dens = new Float32Array(n); trail = new Float32Array(n); hole = new Float32Array(n); avoid = new Float32Array(n);
     opB = new Uint8Array(n); opK = new Uint32Array(n); opC = new Uint8Array(n); order = new Uint32Array(n);
-    counts = new Uint32Array(GL + FL); starts = new Uint32Array(GL + FL);
+    counts = new Uint32Array(GL + FL + 1); starts = new Uint32Array(GL + FL + 1);
     gcols = Math.ceil(cols / 2) + 2; grows = Math.ceil(rows / 2) + 2;
     fogGrid = new Float32Array(gcols * grows);
     glowC.width = cols; glowC.height = rows;
@@ -141,7 +155,7 @@ export function mount(canvas, opts = {}) {
 
   /** Sky, graves and the vignette never move: paint them once per theme. */
   function cache(pal) {
-    const key = pal === THEMES.light ? "light" : "dark";
+    const key = pal.key;
     if (caches[key]) return caches[key];
     const mk = () => { const c = document.createElement("canvas"); c.width = canvas.width; c.height = canvas.height; const x = c.getContext("2d"); x.scale(dpr, dpr); return [c, x]; };
     const [bg, b] = mk();
@@ -154,8 +168,8 @@ export function mount(canvas, opts = {}) {
         const fade = j >= hillRow[i] ? 0 : 1; // graves and tree only, no ground
         if (fade <= 0.02) continue;
         const h = hash3(i, j, 4), edge = gd < 0.75;
-        b.fillStyle = rgba(pal.embedGround, (edge ? 0.55 : 0.85) * fade);
-        b.fillText(edge ? (gd < 0.45 ? "." : ":") : h < 0.4 ? "#" : h < 0.7 ? "%" : h < 0.9 ? "=" : "+", (i + 0.5) * cw, (j + 0.5) * ch);
+        b.fillStyle = rgba(pal.ground, (edge ? 0.5 : 0.9) * fade);
+        b.fillText(edge ? (gd < 0.45 ? "." : ":") : h < 0.85 ? "#" : "%", (i + 0.5) * cw, (j + 0.5) * ch); // even fill, so the shapes read
       }
       return (caches[key] = { bg, vg: null });
     }
@@ -422,6 +436,11 @@ export function mount(canvas, opts = {}) {
         const dx = (cx - hx) / r, dy = (cy - hy) / r;
         const x = dx * ct + dy * st, y = -dx * st + dy * ct;
         let d = wraithAt(pose, x, y);
+        if (wraithAt.hole > 0.05) {
+          // faint figures get faint holes: the dark face scales with how solid the ghost is
+          const hk = j * cols + i, hv = Math.min(1, wraithAt.hole * 1.5) * depth * depth * sink;
+          if (hv > hole[hk]) hole[hk] = hv;
+        }
         if (d < 0.02) continue;
         const nz = fbm(x * 1.7 + g.id * 13 - g.wave * 0.2, y * 1.4 - g.wave * 0.35, seed + 61, 3);
         d *= 1 - (1 - d) * (1 - d) * 0.95 * clamp(1.7 - nz * 2.4, 0, 1) * (0.3 + clamp(y / tailN, 0, 1));
@@ -446,7 +465,7 @@ export function mount(canvas, opts = {}) {
 
   /** Stamp this frame's wraiths, then let last frame's fade behind them as an afterimage. */
   function updateGhosts(t, dt) {
-    dens.fill(0);
+    dens.fill(0); hole.fill(0);
     for (const g of ghosts) stampGhost(g, t);
     const keep = Math.exp(-dt * 7);
     for (let k = 0; k < trail.length; k++) { const a = trail[k] * keep; trail[k] = dens[k] > a ? dens[k] : a; }
@@ -455,12 +474,12 @@ export function mount(canvas, opts = {}) {
   // --------------------------------------------------------------- drawing
 
   function drawScene(t) {
-    const pal = P;
+    const pal = embed ? P.embed : P;
     const c = cache(pal);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = "source-over";
-    if (embed) { ctx.fillStyle = rgba(pal.embedPage); ctx.fillRect(0, 0, canvas.width, canvas.height); }
+    if (embed) { ctx.fillStyle = rgba(pal.page); ctx.fillRect(0, 0, canvas.width, canvas.height); }
     ctx.drawImage(c.bg, 0, 0);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     if (flash > 0 && pal === THEMES.dark && !embed) { // lightning: two quick pulses, then a slow fade
@@ -498,14 +517,16 @@ export function mount(canvas, opts = {}) {
         const dim = 1 - 0.8 * avoid[k];
         const v = trail[k];
         let b, ch2;
-        if (v >= 0.05) {
+        if (pal.socket && hole[k] > 0.22) { // the hollow face, painted dark
+          b = SOCKET; ch2 = hole[k] > 0.5 ? 9 : hole[k] > 0.34 ? 8 : 7;
+        } else if (v >= 0.05) {
           b = Math.round(clamp(v * dim, 0, 1) * (GL - 1));
           ch2 = clamp(Math.round(v * 9.4), 1, 9);
         } else {
           const fx = i / 2, fxi = fx | 0, ffx = fx - fxi, q = fyi * gcols + fxi;
           const raw = lerp(lerp(fogGrid[q], fogGrid[q + 1], ffx), lerp(fogGrid[q + gcols], fogGrid[q + gcols + 1], ffx), ffy);
           let f = smoothstep(0.48, 0.76, raw) * (0.35 + 0.65 * lf) * (embed ? 0.55 : 1);
-          if (ground[k] > 0.15 && f < 0.35) continue;
+          if (ground[k] > 0.15 && (f < 0.55 || pal.socket)) continue; // pale fog over dark ground reads as stripes in the light theme
           let boost = 0;
           if (lit > 0.01) { const dx = (i + 0.5) * cw - lx, dy = cy - ly; boost = lit * Math.exp(-(dx * dx + dy * dy) / lr2); }
           f = Math.min(1, f + boost * 0.35);
@@ -517,13 +538,13 @@ export function mount(canvas, opts = {}) {
       }
     }
     let acc = 0;
-    for (let b = 0; b < GL + FL; b++) { starts[b] = acc; acc += counts[b]; }
+    for (let b = 0; b <= SOCKET; b++) { starts[b] = acc; acc += counts[b]; }
     for (let m = 0; m < n; m++) order[starts[opB[m]]++] = m;
     ctx.font = font();
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     let m = 0;
-    for (let b = 0; b < GL + FL; b++) {
+    for (let b = 0; b <= SOCKET; b++) {
       const cnt = counts[b];
       if (!cnt) continue;
       ctx.fillStyle = pal.css[b];
