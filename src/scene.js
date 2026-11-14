@@ -52,6 +52,7 @@ export function mount(canvas, opts = {}) {
   let opB, opK, opC, counts, starts, order;
   let ghosts = [];
   const ripples = [];
+  let avoidRects = [];
   const ptr = { x: -1e5, y: -1e5, lastMove: -1e9, light: 0 };
   let time = 0, flash = 0, nextFlash = 14;
   let caches = {};
@@ -65,7 +66,7 @@ export function mount(canvas, opts = {}) {
     W = w; H = h; dpr = ratio; S = Math.min(W, H);
     canvas.width = Math.round(W * dpr);
     canvas.height = Math.round(H * dpr);
-    cw = clamp(Math.round(W / 150), 7, 11);
+    cw = embed ? 13 : clamp(Math.round(W / 150), 7, 11);
     ch = Math.round(cw * 1.35);
     cols = Math.ceil(W / cw);
     rows = Math.ceil(H / ch);
@@ -100,7 +101,7 @@ export function mount(canvas, opts = {}) {
     g.beginPath(); g.moveTo(0, H);
     for (let x = 0; x <= W; x += 6) g.lineTo(x, hill(x));
     g.lineTo(W, H); g.closePath(); g.fill();
-    const u = S * 0.075;
+    const u = S * (embed ? 0.13 : 0.075);
     let x = W * 0.03;
     while (x < W * 0.84) {
       const kind = r(), hgt = u * (0.7 + r() * 0.9), wid = hgt * (0.5 + r() * 0.25), lean = (r() - 0.5) * 0.25;
@@ -121,7 +122,7 @@ export function mount(canvas, opts = {}) {
     const tx = W * (H > W ? 0.86 : 0.9);
     const branch = (x0, y0, ang, len, wdt, depth) => {
       const x1 = x0 + Math.cos(ang) * len, y1 = y0 + Math.sin(ang) * len;
-      g.lineWidth = wdt;
+      g.lineWidth = Math.max(wdt, embed ? cw * 0.9 : 0);
       g.beginPath(); g.moveTo(x0, y0);
       g.quadraticCurveTo((x0 + x1) / 2 + (r() - 0.5) * len * 0.3, (y0 + y1) / 2, x1, y1); g.stroke();
       if (depth <= 0 || wdt < cw * 0.5) return;
@@ -150,7 +151,7 @@ export function mount(canvas, opts = {}) {
         const gd = ground[k];
         if (gd < 0.15) continue;
         const i = k % cols, j = (k / cols) | 0;
-        const fade = 1 - smoothstep(0, 3.5, j - hillRow[i]);
+        const fade = j >= hillRow[i] ? 0 : 1; // graves and tree only, no ground
         if (fade <= 0.02) continue;
         const h = hash3(i, j, 4), edge = gd < 0.75;
         b.fillStyle = rgba(pal.embedGround, (edge ? 0.55 : 0.85) * fade);
@@ -181,8 +182,10 @@ export function mount(canvas, opts = {}) {
   // Three kinds, all unmistakably ghosts: wraiths with arms, small quick ones, and big faint
   // shades far back that barely move. They lean into their motion but stay upright.
   const KINDS = {
-    wraith: { size: 1, face: true, arms: true, slim: 1, tail: 1, speed: [24, 44], follow: 0.8, maxTilt: 0.4, z: [0.55, 1] },
-    wisp: { size: 0.7, face: true, arms: false, slim: 0.88, tail: 1.3, speed: [45, 80], follow: 1.0, maxTilt: 0.5, z: [0.35, 0.85] },
+    wraith: { size: 1, face: true, arms: true, slim: 1, tail: 1, speed: [24, 44], follow: 0.8, maxTilt: 0.3, z: [0.55, 1] },
+    wisp: { size: 0.7, face: true, arms: false, slim: 0.88, tail: 1.3, speed: [45, 80], follow: 1.0, maxTilt: 0.4, z: [0.35, 0.85] },
+    // a big, faint one that sweeps past close to the viewer and is gone
+    passer: { size: 1.9, face: true, arms: true, slim: 1, tail: 1.1, speed: [70, 90], follow: 0.6, maxTilt: 0.25, z: [1, 1], alpha: 0.5, passer: true },
     shade: { size: 1.45, face: true, arms: true, slim: 1.1, tail: 1.25, speed: [10, 18], follow: 0.4, maxTilt: 0.3, z: [0.08, 0.3] },
   };
   let nextId = 0;
@@ -200,7 +203,7 @@ export function mount(canvas, opts = {}) {
     };
   }
 
-  const radius = (g) => clamp(S * (0.055 + 0.03 * g.z), 22, 72) * g.K.size * (rec ? 1.15 : 1);
+  const radius = (g) => clamp(S * (0.055 + 0.03 * g.z), 22, 72) * g.K.size * (embed ? 1.6 : rec ? 1.15 : 1);
 
   /** Where the shroud trails: away from the motion, and down when still. */
   function trailTilt(g, vx, vy) {
@@ -215,28 +218,31 @@ export function mount(canvas, opts = {}) {
   /** Record mode: four figures on paths whose periods divide the loop, so it closes seamlessly. */
   function recordCast() {
     const r = rng(seed);
-    const cast = [makeGhost("shade", r), makeGhost("wraith", r), makeGhost("wisp", r), makeGhost("wisp", r)];
-    cast[0].z = 0.18; cast[1].z = 0.9; cast[2].z = 0.75; cast[3].z = 0.5;
+    const cast = [makeGhost("shade", r), makeGhost("wisp", r), makeGhost("wraith", r), makeGhost("passer", r)];
+    cast[0].z = 0.2; cast[1].z = 0.6; cast[2].z = 0.9;
     return cast;
   }
 
   function poseLoop(g, idx, t) {
     const w = TAU / loopT, u = t / loopT;
     let x, y, vx, vy;
-    if (g.kind === "wisp") { // streams across the frame, weaving
-      const dir = idx === 2 ? 1 : -1;
+    if (g.kind === "passer") { // sweeps left to right, close and faint, once a loop
+      const span = W * 1.9, f = ((u + 0.15) % 1 + 1) % 1;
+      x = -W * 0.45 + f * span; y = H * 0.4 + H * 0.05 * Math.sin(TAU * f * 2 + g.ph);
+      vx = span / loopT; vy = H * 0.05 * TAU * 2 / loopT * Math.cos(TAU * f * 2 + g.ph);
+    } else if (g.kind === "wisp") { // weaves right to left across the whole frame
       const f = ((u + g.ph3) % 1 + 1) % 1, span = W * 1.4;
-      x = dir > 0 ? -W * 0.2 + f * span : W * 1.2 - f * span;
-      y = H * (idx === 2 ? 0.3 : 0.55) + H * 0.12 * Math.sin(TAU * 2 * f + g.ph);
-      vx = dir * span / loopT; vy = H * 0.12 * TAU * 2 / loopT * Math.cos(TAU * 2 * f + g.ph);
-    } else if (g.kind === "wraith") { // a wide, wandering figure eight
-      x = W * 0.45 + W * 0.2 * Math.sin(w * t + g.ph);
-      y = H * 0.32 + H * 0.1 * Math.sin(2 * w * t + g.ph2);
-      vx = W * 0.2 * w * Math.cos(w * t + g.ph); vy = H * 0.1 * 2 * w * Math.cos(2 * w * t + g.ph2);
-    } else { // far back, barely moving
-      x = W * 0.72 + W * 0.06 * Math.sin(w * t + g.ph);
-      y = H * 0.24 + H * 0.04 * Math.sin(w * t + g.ph2);
-      vx = W * 0.06 * w * Math.cos(w * t + g.ph); vy = H * 0.04 * w * Math.cos(w * t + g.ph2);
+      x = W * 1.2 - f * span;
+      y = H * 0.36 + H * 0.1 * Math.sin(TAU * 2 * f + g.ph);
+      vx = -span / loopT; vy = H * 0.1 * TAU * 2 / loopT * Math.cos(TAU * 2 * f + g.ph);
+    } else if (g.kind === "wraith") { // a wide, slow figure eight just right of centre
+      x = W * 0.58 + W * 0.2 * Math.sin(w * t + g.ph);
+      y = H * 0.3 + H * 0.08 * Math.sin(2 * w * t + g.ph2);
+      vx = W * 0.2 * w * Math.cos(w * t + g.ph); vy = H * 0.08 * 2 * w * Math.cos(2 * w * t + g.ph2);
+    } else { // far back on the left, barely moving
+      x = W * 0.2 + W * 0.05 * Math.sin(w * t + g.ph);
+      y = H * 0.26 + H * 0.04 * Math.sin(w * t + g.ph2);
+      vx = W * 0.05 * w * Math.cos(w * t + g.ph); vy = H * 0.04 * w * Math.cos(w * t + g.ph2);
     }
     g.x = x; g.y = y; g.vx = vx; g.vy = vy;
     g.tilt = trailTilt(g, vx, vy);
@@ -260,8 +266,8 @@ export function mount(canvas, opts = {}) {
     const alive = ghosts.filter((g) => !g.leaving).length;
     if (alive < want && Math.random() < dt * 0.6) {
       const roll = Math.random();
-      const g = makeGhost(roll < 0.45 ? "wraith" : roll < 0.85 ? "wisp" : "shade", Math.random);
-      if (Math.random() < 0.5) { // drift in from an edge
+      const g = makeGhost(roll < 0.42 ? "wraith" : roll < 0.8 ? "wisp" : roll < 0.93 ? "shade" : "passer", Math.random);
+      if (g.K.passer || Math.random() < 0.5) { // drift in from an edge
         const side = Math.random() < 0.5 ? -1 : 1, r = radius(g);
         g.x = side < 0 ? -r * 2 : W + r * 2;
         g.vx = -side * g.speed; g.hd = side < 0 ? 0 : Math.PI;
@@ -284,7 +290,7 @@ export function mount(canvas, opts = {}) {
     for (const g of ghosts) {
       const r = radius(g);
       g.age += dt;
-      if (g.age > g.life) g.leaving = true;
+      if (g.age > g.life && !g.K.passer) g.leaving = true;
       // a slow current runs through the whole page; each one also wanders on its own
       const fa = valueNoise(g.x / S * 1.3 + time * 0.04, g.y / S * 1.3, seed + 77) * TAU * 2;
       g.hd += (valueNoise(time * 0.15, g.id * 7.31, seed) - 0.5) * dt * 3.2;
@@ -297,7 +303,19 @@ export function mount(canvas, opts = {}) {
         g.vx += Math.cos(a) * p; g.vy += Math.sin(a) * p * 0.7; g.hd = a;
         if (Math.random() < 0.5) g.flick = 0.35;
       }
-      if (!g.leaving) { // soft edges: they may brush past, but turn back
+      if (g.K.passer) { // straight across, then gone
+        tx = Math.sign(g.vx || 1) * g.speed; ty *= 0.3;
+        if (g.x < -r * 3 || g.x > W + r * 3) g.gone = g.age > 2;
+      }
+      // keep clear of the text: the head and the hanging shroud both stay off it
+      for (const b of avoidRects) {
+        const l = b.left - r * 1.3, rt = b.right + r * 1.3, tp = b.top - r * 3.2, bt = b.bottom + r * 1.1;
+        if (g.x > l && g.x < rt && g.y > tp && g.y < bt) {
+          const pushX = g.x - l < rt - g.x ? -(g.x - l) : rt - g.x, pushY = g.y - tp < bt - g.y ? -(g.y - tp) : bt - g.y;
+          if (Math.abs(pushX) < Math.abs(pushY)) tx += pushX * 1.5; else ty += pushY * 1.5;
+        }
+      }
+      if (!g.leaving && !g.K.passer) { // soft edges: they may brush past, but turn back
         const m = -r * 0.5;
         if (g.x < m) tx += (m - g.x) * 1.2;
         if (g.x > W - m) tx -= (g.x - (W - m)) * 1.2;
@@ -322,6 +340,7 @@ export function mount(canvas, opts = {}) {
       g.tilt += da * Math.min(1, dt * 2.2);
       g.lean += (clamp(g.vx / 40, -1, 1) * 0.3 - g.lean) * Math.min(1, dt * 2.5);
       g.startle *= Math.exp(-dt * 0.9);
+      g.scatter = (g.scatter || 0) * Math.exp(-dt * 0.7);
       g.wave += dt * (1.6 + g.startle * 5 + Math.hypot(g.vx, g.vy) * 0.012);
       let lx = g.vx, ly = g.vy * 0.3 + 4, ll = Math.hypot(lx, ly) || 1;
       if (near) { lx = dx; ly = dy; ll = d || 1; }
@@ -343,7 +362,7 @@ export function mount(canvas, opts = {}) {
       }
       const flickering = g.flick > 0 || (g.age < g.fadeIn && g.fadeIn > 1);
       g.glitch = Math.max(flickering ? 1 : 0, g.startle * 0.8);
-      g.vis = life * (flickering && Math.sin(time * 60 + g.id) > 0.3 ? 0.3 : 1);
+      g.vis = life * (flickering && Math.sin(time * 60 + g.id) > 0.3 ? 0.3 : 1) * (1 - 0.85 * (g.scatter || 0));
     }
     nextFlash -= dt;
     if (nextFlash <= 0) { flash = 1; nextFlash = 18 + Math.random() * 26; }
@@ -384,7 +403,7 @@ export function mount(canvas, opts = {}) {
       face: K.face, arms: K.arms, slim: K.slim, tail: K.tail,
     };
     const tilt = g.tilt + Math.sin(g.wave * 0.25 + g.ph) * 0.06, ct = Math.cos(tilt), st = Math.sin(tilt);
-    const depth = (0.45 + 0.55 * g.z) * g.vis;
+    const depth = (0.45 + 0.55 * g.z) * g.vis * (K.alpha || 1);
     if (depth < 0.02) return;
     const tick = Math.floor(t * 18);
     // bounds of the rotated figure: the head and the far end of the tail, padded by its width
@@ -429,7 +448,7 @@ export function mount(canvas, opts = {}) {
   function updateGhosts(t, dt) {
     dens.fill(0);
     for (const g of ghosts) stampGhost(g, t);
-    const keep = Math.exp(-dt * 4.5);
+    const keep = Math.exp(-dt * 7);
     for (let k = 0; k < trail.length; k++) { const a = trail[k] * keep; trail[k] = dens[k] > a ? dens[k] : a; }
   }
 
@@ -485,7 +504,7 @@ export function mount(canvas, opts = {}) {
         } else {
           const fx = i / 2, fxi = fx | 0, ffx = fx - fxi, q = fyi * gcols + fxi;
           const raw = lerp(lerp(fogGrid[q], fogGrid[q + 1], ffx), lerp(fogGrid[q + gcols], fogGrid[q + gcols + 1], ffx), ffy);
-          let f = smoothstep(0.48, 0.76, raw) * (0.35 + 0.65 * lf);
+          let f = smoothstep(0.48, 0.76, raw) * (0.35 + 0.65 * lf) * (embed ? 0.55 : 1);
           if (ground[k] > 0.15 && f < 0.35) continue;
           let boost = 0;
           if (lit > 0.01) { const dx = (i + 0.5) * cw - lx, dy = cy - ly; boost = lit * Math.exp(-(dx * dx + dy * dy) / lr2); }
@@ -533,9 +552,11 @@ export function mount(canvas, opts = {}) {
   function measure() {
     if (!avoid) return;
     avoid.fill(0);
+    avoidRects = [];
     for (const el of document.querySelectorAll("[data-sky-avoid]")) {
       const r = el.getBoundingClientRect();
       if (!r.width || !r.height) continue;
+      avoidRects.push(r);
       const i0 = Math.max(0, Math.floor((r.left - 8) / cw)), i1 = Math.min(cols - 1, Math.floor((r.right + 8) / cw));
       const j0 = Math.max(0, Math.floor((r.top - 4) / ch)), j1 = Math.min(rows - 1, Math.floor((r.bottom + 4) / ch));
       for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) avoid[j * cols + i] = 1;
@@ -584,7 +605,8 @@ export function mount(canvas, opts = {}) {
       if (d > reach) continue;
       const k = 1 - d / reach;
       g.startle = Math.max(g.startle, 0.5 + 0.5 * k);
-      g.vx += (dx / d) * 220 * k; g.vy += (dy / d) * 160 * k;
+      g.scatter = Math.max(g.scatter || 0, k); // they all but vanish, then drift back
+      g.vx += (dx / d) * 380 * k; g.vy += (dy / d) * 280 * k;
       g.hd = Math.atan2(dy, dx);
       g.flick = 0.5;
     }
