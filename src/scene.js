@@ -327,7 +327,7 @@ export function mount(canvas, opts = {}) {
     const sp = Math.hypot(vx, vy) || 1;
     g.lookX = (vx / sp) * 0.7; g.lookY = 0.2;
     g.reach = 0.5 + 0.5 * Math.sin(w * t + g.ph2);
-    g.gape = 0.25 + 0.25 * Math.sin(2 * w * t + g.ph);
+    g.gape = 0;
     const v = ((u + g.ph3) % 1 + 1) % 1;
     g.blink = v > 0.5 && v < 0.52 ? 1 : 0;
     g.glitch = 0;
@@ -509,7 +509,7 @@ export function mount(canvas, opts = {}) {
       else if (g.mood === "hover") { lx = Math.sin(time * 0.7 + g.ph); ly = 0.3 * Math.sin(time * 0.43 + g.ph2); ll = 1; }
       g.lookX += ((lx / ll) * 0.9 - g.lookX) * Math.min(1, dt * 2);
       g.lookY += ((ly / ll) * 0.6 - g.lookY) * Math.min(1, dt * 2);
-      g.gape += ((0.2 + 0.15 * Math.sin(time * 0.6 + g.ph) + g.startle * 0.9) - g.gape) * Math.min(1, dt * 6);
+      g.gape += (g.startle * 1.1 - g.gape) * Math.min(1, dt * 6); // the mouth opens only in fright
       g.blinkAt -= dt;
       if (g.blinkAt <= 0) { g.blink = 1; g.blinkAt = 4 + Math.random() * 7; }
       g.blink = Math.max(0, g.blink - dt * 5);
@@ -568,7 +568,7 @@ export function mount(canvas, opts = {}) {
     const r = radius(g), seg = r * 0.36 * g.K.tail;
     const bob = Math.sin(g.wave * 0.5 + g.ph2) * r * 0.16;
     const ht = g.htilt || 0;
-    const nx = g.x - Math.sin(ht) * r * 0.85, ny = g.y + bob + Math.cos(ht) * r * 0.85; // the neck
+    const nx = g.x - Math.sin(ht) * r * 0.95, ny = g.y + bob + Math.cos(ht) * r * 0.95; // the shoulders
     if (!g.spine) { g.spine = []; for (let i = 0; i < SPINE; i++) g.spine.push([nx, ny + i * seg]); }
     const sp = g.spine;
     sp[0][0] = nx; sp[0][1] = ny;
@@ -628,7 +628,7 @@ export function mount(canvas, opts = {}) {
           const qx = cx - (ax + vx * u), qy = cy - (ay + vy * u), q = Math.hypot(qx, qy);
           const sN = (n + u) / N;
           const side = (vx * qy - vy * qx) / Math.sqrt(ll); // signed distance across the shroud
-          let wd = r * slim * (0.9 * Math.pow(1 - sN, 0.7) + 0.06) * (sN < 0.1 ? 0.78 + 2.2 * sN : 1);
+          let wd = r * slim * (1.0 * Math.pow(1 - sN, 0.75) + 0.06);
           // the hem tears into strands that sway
           const tat = smoothstep(0.5, 1, sN) * (0.5 - 0.5 * Math.cos(side / r * 6.5 + sN * 4 + g.wave * 0.75));
           wd *= 1 - 0.55 * tat;

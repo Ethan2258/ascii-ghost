@@ -1,61 +1,53 @@
-// A ghost, as a density field: shape space is in head radii, origin at the centre of the
-// head, y down. 1 is solid, 0 empty. The head is the brightest, most solid part; the shroud
-// below it thins into smoke, and the face is cut out as holes so it reads as hollow.
+// A ghost's head, face and sleeves, as a density field: shape space is in head radii, origin at
+// the centre of the head, y down. 1 is solid, 0 empty. The face is two hollow eyes cut out of
+// the sheet (and a small round mouth only when it is frightened). The scene draws the shroud
+// below the head separately, hanging from a chain of links so it trails the ghost's motion.
 import { clamp, smoothstep } from "./util.js";
 
-/** pose: { lean, wave, gape, eye, lookX, lookY, reach, face, arms, slim, tail, noBody }
+/** pose: { wave, gape, eye, lookX, lookY, reach, face, arms, slim }
  *  Returns the density; `wraithAt.hole` is how much eye or mouth was cut out at that point. */
 export function wraithAt(p, x, y) {
-  // the shroud trails behind the motion and ripples, more the further down it hangs
-  const k = clamp(y / 3, 0, 1.4);
-  const sx = x + p.lean * k * k * 0.9 - Math.sin(p.wave - y * 1.5) * 0.22 * k;
-
-  // head: round and solid
-  const hx = sx / (0.86 * p.slim), hy = (y + 0.02) / 0.98;
-  let d = smoothstep(1.08, 0.62, Math.sqrt(hx * hx + hy * hy));
-
-  // shroud: shoulders, then a narrowing tail torn into strands; fainter than the head
-  if (y > 0.25 && !p.noBody) { // (the scene draws the shroud along a spine instead)
-    const w = (0.8 + 0.28 * smoothstep(0.3, 1.2, y) - 0.72 * smoothstep(1.3, 3.8 * p.tail, y)) * p.slim;
-    const across = Math.abs(sx) / w;
-    const strand = 0.5 + 0.5 * Math.cos(sx * 5.2 + Math.sin(p.wave * 0.75) * 0.6);
-    const end = (2.6 + 1.4 * strand * strand) * p.tail;
-    const fade = 0.78 - 0.4 * smoothstep(0.7, 3.2 * p.tail, y);
-    const body = smoothstep(1.12, 0.6, across) * smoothstep(end, end - 1.0 * p.tail, y) * fade;
-    d = Math.max(d, body);
+  // head: round and soft, widening into the shoulders so there is no neck
+  const hx = x / (0.9 * p.slim), hy = (y + 0.02) / 0.96;
+  let d = smoothstep(1.08, 0.6, Math.sqrt(hx * hx + hy * hy));
+  if (y > 0.2) { // shoulders: the head flows straight into the shroud
+    const sw = (0.86 + 0.18 * smoothstep(0.2, 1.1, y)) * p.slim;
+    d = Math.max(d, smoothstep(sw * 1.12, sw * 0.62, Math.abs(x)) * smoothstep(1.35, 1.0, y) * 0.92);
   }
 
-  // arms: long thin wisps from the shoulders, hanging and reaching
+  // sleeves: wide, soft and drooping, cloth rather than limbs; they lift when it reaches out
   if (p.arms) for (let s = -1; s <= 1; s += 2) {
-    const ax0 = s * 0.78, ay0 = 0.8;
-    const ax1 = s * (1.45 + 0.35 * p.reach), ay1 = 2.0 - 0.9 * p.reach + 0.15 * Math.sin(p.wave * 0.75 + s);
+    const ax0 = s * 0.62, ay0 = 0.62;
+    const ax1 = s * (1.12 + 0.28 * p.reach), ay1 = 1.3 - 0.5 * p.reach + 0.08 * Math.sin(p.wave * 0.75 + s);
     const vx = ax1 - ax0, vy = ay1 - ay0, ll = vx * vx + vy * vy;
-    const t = clamp(((sx - ax0) * vx + (y - ay0) * vy) / ll, 0, 1);
-    const qx = ax0 + vx * t - sx, qy = ay0 + vy * t - y;
-    const th = 0.19 * (1 - t) + 0.05;
-    d = Math.max(d, smoothstep(th * 1.8, th * 0.5, Math.sqrt(qx * qx + qy * qy)) * (0.7 - 0.3 * t));
+    const t = clamp(((x - ax0) * vx + (y - ay0) * vy) / ll, 0, 1);
+    const qx = ax0 + vx * t - x, qy = ay0 + vy * t - y;
+    const th = 0.34 * (1 - t) + 0.13; // broad at the shoulder, still broad at the cuff
+    // the cuff hangs in a soft scallop
+    const cuff = t > 0.75 ? 0.06 * Math.sin((qx * s) * 18 + p.wave) : 0;
+    d = Math.max(d, smoothstep(th * 1.25 + cuff, th * 0.55, Math.sqrt(qx * qx + qy * qy)) * (0.78 - 0.18 * t));
   }
   wraithAt.hole = 0;
   if (d < 0.01 || !p.face) return d;
   const before = d;
   let keep = 1;
 
-  // eye sockets: big, set apart, tipped very slightly down at the outside
+  // eyes: two round, hollow, slightly-too-far-apart dark eyes, set a little low
   for (let s = -1; s <= 1; s += 2) {
-    const ex = sx - (s * 0.36 + p.lookX * 0.08), ey = y - (-0.1 + p.lookY * 0.06);
-    const a = s * 0.14, ca = Math.cos(a), sa = Math.sin(a);
-    const u = (ex * ca + ey * sa) / 0.21, v = (-ex * sa + ey * ca) / (0.33 * p.eye + 0.04);
-    const e = u * u + v * v;
-    if (e < 1.7) keep *= smoothstep(0.55, 1.7, e);
+    const ex = (x - (s * 0.33 + p.lookX * 0.09)) / 0.165;
+    const ey = (y - (-0.02 + p.lookY * 0.06)) / (0.215 * p.eye + 0.035);
+    const e = ex * ex + ey * ey;
+    if (e < 1.6) keep *= smoothstep(0.6, 1.6, e);
   }
-  // mouth: a tall, dark, open hole
-  const mx = (sx - p.lookX * 0.05) / (0.12 + 0.05 * p.gape), my = (y - 0.5) / (0.2 + 0.16 * p.gape);
-  const m = mx * mx + my * my;
-  if (m < 1.7) keep *= smoothstep(0.55, 1.7, m);
+  // mouth: nothing at rest; a small round "o" when frightened
+  if (p.gape > 0.25) {
+    const g = (p.gape - 0.25) / 0.75;
+    const mx = (x - p.lookX * 0.05) / (0.06 + 0.06 * g), my = (y - 0.42) / (0.05 + 0.11 * g);
+    const m = mx * mx + my * my;
+    if (m < 1.6) keep *= smoothstep(0.6, 1.6, m);
+  }
   d *= keep;
-  // how much of a solid face was cut away here: a light theme paints these holes dark
+  // how much of a solid face was cut away here: a theme may paint these holes dark
   wraithAt.hole = before > 0.3 ? (1 - keep) * before : 0;
   return d;
 }
-
-export const WRAITH = { top: -1.2, bottom: 4.0, half: 2.0 }; // bottom scales with pose.tail
