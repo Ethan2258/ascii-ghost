@@ -13,7 +13,7 @@
 //                                                                 drive it with frame(i)
 
 import { TAU, clamp, lerp, smoothstep, mixRgb, rgba, rng, hash3, valueNoise, fbm, lineGlyph } from "./util.js";
-import { wraithAt, WRAITH } from "./wraith.js";
+import { wraithAt } from "./wraith.js";
 
 const CHARS = " .:-=+*#%@~"; // 1..9 is the density ramp, 10 is fog
 const GL = 32, FL = 16; // ghost / fog colour levels
@@ -561,56 +561,96 @@ export function mount(canvas, opts = {}) {
 
   // --------------------------------------------------------------- wraiths
 
+  // The shroud hangs from a spine of 12 links, like a rope: the head drags it, gravity pulls it
+  // down, so it trails along the path just travelled and swings out on every turn.
+  const SPINE = 12;
+  function updateSpine(g, dt) {
+    const r = radius(g), seg = r * 0.36 * g.K.tail;
+    const bob = Math.sin(g.wave * 0.5 + g.ph2) * r * 0.16;
+    const ht = g.htilt || 0;
+    const nx = g.x - Math.sin(ht) * r * 0.85, ny = g.y + bob + Math.cos(ht) * r * 0.85; // the neck
+    if (!g.spine) { g.spine = []; for (let i = 0; i < SPINE; i++) g.spine.push([nx, ny + i * seg]); }
+    const sp = g.spine;
+    sp[0][0] = nx; sp[0][1] = ny;
+    for (let i = 1; i < SPINE; i++) {
+      const p = sp[i], q = sp[i - 1], f = i / SPINE;
+      p[1] += (0.5 + 0.4 * f) * r * dt; // gravity: it hangs when still
+      p[0] += Math.sin(time * 1.4 + i * 0.55 + g.ph) * r * 0.5 * f * dt; // and flutters
+      const dx = p[0] - q[0], dy = p[1] - q[1], d = Math.hypot(dx, dy) || 1;
+      p[0] = q[0] + (dx / d) * seg; p[1] = q[1] + (dy / d) * seg;
+    }
+    // the head turns a little to follow its own shroud
+    const ax = sp[3][0] - sp[0][0], ay = sp[3][1] - sp[0][1];
+    g.htilt = ht + (clamp(Math.atan2(-ax, ay) * 0.45, -0.35, 0.35) - ht) * Math.min(1, dt * 3);
+  }
+
   function stampGhost(g, t) {
-    const r = radius(g), K = g.K;
+    const r = radius(g), K = g.K, sp = g.spine;
+    if (!sp) return;
     const bob = Math.sin(g.wave * 0.5 + g.ph2) * r * 0.16;
     const hx = g.x, hy = g.y + bob;
     const pose = {
-      lean: g.lean, wave: g.wave, gape: g.gape, reach: g.reach,
+      lean: 0, wave: g.wave, gape: g.gape, reach: g.reach,
       eye: Math.max(0.08, 1 - g.blink), lookX: g.lookX, lookY: g.lookY,
-      face: K.face, arms: K.arms, slim: K.slim, tail: K.tail,
+      face: K.face, arms: K.arms, slim: K.slim, tail: K.tail, noBody: true,
     };
-    const tilt = g.tilt + Math.sin(g.wave * 0.25 + g.ph) * 0.06, ct = Math.cos(tilt), st = Math.sin(tilt);
+    const tilt = (g.htilt || 0) + Math.sin(g.wave * 0.25 + g.ph) * 0.05, ct = Math.cos(tilt), st = Math.sin(tilt);
     const depth = (0.45 + 0.55 * g.z) * g.vis * (K.alpha || 1);
     if (depth < 0.02) return;
     const tick = Math.floor(t * 18);
-    // bounds of the rotated figure: the head and the far end of the tail, padded by its width
-    const Lb = r * WRAITH.bottom * K.tail, pad = r * WRAITH.half * Math.max(1, K.slim) + 5 * cw;
-    const ex = hx - Lb * st, ey = hy + Lb * ct;
-    const i0 = Math.max(0, Math.floor((Math.min(hx, ex) - pad) / cw)), i1 = Math.min(cols - 1, Math.floor((Math.max(hx, ex) + pad) / cw));
-    const j0 = Math.max(0, Math.floor((Math.min(hy, ey) - pad) / ch)), j1 = Math.min(rows - 1, Math.floor((Math.max(hy, ey) + pad) / ch));
-    const tailN = 3.5 * K.tail;
+    // bounds: the head, the arms and every link of the spine, padded by the shroud's width
+    let x0 = hx - r * 2.1, x1 = hx + r * 2.1, y0 = hy - r * 1.3, y1 = hy + r * 2.4;
+    for (const [px, py] of sp) { x0 = Math.min(x0, px - r * 1.2); x1 = Math.max(x1, px + r * 1.2); y0 = Math.min(y0, py - r); y1 = Math.max(y1, py + r); }
+    const i0 = Math.max(0, Math.floor(x0 / cw)), i1 = Math.min(cols - 1, Math.floor(x1 / cw));
+    const j0 = Math.max(0, Math.floor(y0 / ch)), j1 = Math.min(rows - 1, Math.floor(y1 / ch));
+    const N = SPINE - 1, slim = K.slim;
     for (let j = j0; j <= j1; j++) {
       const cy = (j + 0.5) * ch;
       const sink = 1 - 0.85 * lowFog(j);
-      // glitch: whole rows slip sideways for a moment
       const slip = g.glitch > 0 && hash3(j, tick, g.id) < 0.35 * g.glitch ? (hash3(tick, j, 9) - 0.5) * 5 * cw : 0;
       for (let i = i0; i <= i1; i++) {
         const cx = (i + 0.5) * cw - slip;
         const dx = (cx - hx) / r, dy = (cy - hy) / r;
         const x = dx * ct + dy * st, y = -dx * st + dy * ct;
-        let d = wraithAt(pose, x, y);
+        let d = wraithAt(pose, x, y); // head, face and arms
         if (wraithAt.hole > 0.05) {
-          // faint figures get faint holes: the dark face scales with how solid the ghost is
           const hk = j * cols + i, hv = Math.min(1, wraithAt.hole * 1.5) * depth * depth * sink;
           if (hv > hole[hk]) hole[hk] = hv;
         }
+        // the shroud: distance to the spine, with a width that tapers from the shoulders
+        let body = 0, bs = 1;
+        for (let n = 0; n < N; n++) {
+          const ax = sp[n][0], ay = sp[n][1], bx = sp[n + 1][0], by = sp[n + 1][1];
+          const vx = bx - ax, vy = by - ay, ll = vx * vx + vy * vy || 1;
+          let u = ((cx - ax) * vx + (cy - ay) * vy) / ll;
+          if (n === 0 && u < 0) continue; // nothing above the neck: that is the face
+          u = clamp(u, 0, 1);
+          const qx = cx - (ax + vx * u), qy = cy - (ay + vy * u), q = Math.hypot(qx, qy);
+          const sN = (n + u) / N;
+          const side = (vx * qy - vy * qx) / Math.sqrt(ll); // signed distance across the shroud
+          let wd = r * slim * (0.9 * Math.pow(1 - sN, 0.7) + 0.06) * (sN < 0.1 ? 0.78 + 2.2 * sN : 1);
+          // the hem tears into strands that sway
+          const tat = smoothstep(0.5, 1, sN) * (0.5 - 0.5 * Math.cos(side / r * 6.5 + sN * 4 + g.wave * 0.75));
+          wd *= 1 - 0.55 * tat;
+          const v = smoothstep(wd * 1.25, wd * 0.4, q) * (0.82 - 0.42 * sN);
+          if (v > body) { body = v; bs = sN; }
+        }
+        if (body > d) d = body;
         if (d < 0.02) continue;
         const nz = fbm(x * 1.7 + g.id * 13 - g.wave * 0.2, y * 1.4 - g.wave * 0.35, seed + 61, 3);
-        // smoke at the edges; the ink theme keeps a clean outline instead
-        if (!(embed ? P.embed : P).ink) d *= 1 - (1 - d) * (1 - d) * 0.95 * clamp(1.7 - nz * 2.4, 0, 1) * (0.3 + clamp(y / tailN, 0, 1));
+        if (!(embed ? P.embed : P).ink) d *= 1 - (1 - d) * (1 - d) * 0.95 * clamp(1.7 - nz * 2.4, 0, 1) * (0.3 + (body > 0 ? bs : 0));
         const k = j * cols + i;
-        const v = clamp(d, 0, 1) * depth * sink;
-        if (v > dens[k]) dens[k] = v;
+        const vv = clamp(d, 0, 1) * depth * sink;
+        if (vv > dens[k]) dens[k] = vv;
       }
     }
-    // specks of the shroud lifting off and fading
-    for (let s = 0; s < 8; s++) {
+    // specks of the shroud lifting off and fading, from along its length
+    for (let s2 = 0; s2 < 8; s2++) {
       const rate = rec ? 2 / loopT : 0.35;
-      const u = (((t * rate + s / 8 + g.ph3) % 1) + 1) % 1;
-      const lx0 = (hash3(g.id, s, 1) - 0.5) * r * 1.6 + Math.sin(u * 4 + s) * r * 0.3;
-      const ly0 = r * (1.4 + hash3(g.id, s, 2) * 1.8 * g.K.tail) + u * r * 1.2;
-      const sx = hx + lx0 * ct - ly0 * st, sy = hy + lx0 * st + ly0 * ct - u * r * 0.6;
+      const u = (((t * rate + s2 / 8 + g.ph3) % 1) + 1) % 1;
+      const p = sp[4 + ((hash3(g.id, s2, 2) * (SPINE - 5)) | 0)];
+      const sx = p[0] + (hash3(g.id, s2, 1) - 0.5) * r * 1.2 + Math.sin(u * 4 + s2) * r * 0.3;
+      const sy = p[1] - u * r * 1.4;
       const i = Math.floor(sx / cw), j = Math.floor(sy / ch);
       if (i < 0 || j < 0 || i >= cols || j >= rows) continue;
       const k = j * cols + i;
@@ -621,7 +661,7 @@ export function mount(canvas, opts = {}) {
   /** Stamp this frame's wraiths, then let last frame's fade behind them as an afterimage. */
   function updateGhosts(t, dt) {
     dens.fill(0); hole.fill(0);
-    for (const g of ghosts) stampGhost(g, t);
+    for (const g of ghosts) { updateSpine(g, dt); stampGhost(g, t); }
     const keep = Math.exp(-dt * 7);
     for (let k = 0; k < trail.length; k++) { const a = trail[k] * keep; trail[k] = dens[k] > a ? dens[k] : a; }
   }

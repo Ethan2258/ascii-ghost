@@ -3,7 +3,7 @@
 // below it thins into smoke, and the face is cut out as holes so it reads as hollow.
 import { clamp, smoothstep } from "./util.js";
 
-/** pose: { lean, wave, gape, eye, lookX, lookY, reach, face, arms, slim, tail }
+/** pose: { lean, wave, gape, eye, lookX, lookY, reach, face, arms, slim, tail, noBody }
  *  Returns the density; `wraithAt.hole` is how much eye or mouth was cut out at that point. */
 export function wraithAt(p, x, y) {
   // the shroud trails behind the motion and ripples, more the further down it hangs
@@ -15,7 +15,7 @@ export function wraithAt(p, x, y) {
   let d = smoothstep(1.08, 0.62, Math.sqrt(hx * hx + hy * hy));
 
   // shroud: shoulders, then a narrowing tail torn into strands; fainter than the head
-  if (y > 0.25) {
+  if (y > 0.25 && !p.noBody) { // (the scene draws the shroud along a spine instead)
     const w = (0.8 + 0.28 * smoothstep(0.3, 1.2, y) - 0.72 * smoothstep(1.3, 3.8 * p.tail, y)) * p.slim;
     const across = Math.abs(sx) / w;
     const strand = 0.5 + 0.5 * Math.cos(sx * 5.2 + Math.sin(p.wave * 0.75) * 0.6);
