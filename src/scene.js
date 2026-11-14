@@ -41,9 +41,14 @@ THEMES.dark.embed = {
   ...THEMES.dark, key: "dark-embed", page: [13, 17, 23], edge: [13, 17, 23, 1], sky: [34, 38, 48],
   ground: [6, 8, 12], groundEdge: [70, 76, 90],
 };
+// README on GitHub's light theme: a pale blue-grey morning fog that fades to white at the edges,
+// and the dark version's ghosts turned to translucent shadow
 THEMES.light.embed = {
-  ...THEMES.light, key: "light-embed", page: [255, 255, 255], edge: [255, 255, 255, 1], sky: [240, 240, 242],
-  ground: [120, 120, 126], groundEdge: [168, 168, 174], fog: [168, 168, 174], ghostLo: [210, 210, 214], glowA: 0,
+  ...THEMES.light, key: "light-embed", ink: false, glyphGround: true,
+  page: [224, 229, 236], edge: [255, 255, 255, 1], sky: [238, 241, 245],
+  fog: [128, 136, 150], ground: [70, 76, 90], groundEdge: [120, 128, 142],
+  ghostLo: [176, 183, 196], ghostHi: [30, 34, 44], glow: [64, 72, 90], glowA: 0.3, blend: "source-over",
+  socket: null, // the face shows the fog through it, like the dark version in reverse
 };
 for (const t of [THEMES.dark, THEMES.light, THEMES.dark.embed, THEMES.light.embed]) {
   t.css = [];
@@ -186,7 +191,7 @@ export function mount(canvas, opts = {}) {
       const gd = ground[k];
       if (gd < 0.15) continue;
       const i = k % cols, j = (k / cols) | 0;
-      if (pal.ink) {
+      if (pal.ink || pal.glyphGround) {
         const fade = 1 - smoothstep(0, 5, j - hillRow[i]);
         if (fade < 0.03) continue;
         const edge = gd < 0.75, h = hash3(i, j, 4);
@@ -469,7 +474,7 @@ export function mount(canvas, opts = {}) {
         if (d < 0.02) continue;
         const nz = fbm(x * 1.7 + g.id * 13 - g.wave * 0.2, y * 1.4 - g.wave * 0.35, seed + 61, 3);
         // smoke at the edges; the ink theme keeps a clean outline instead
-        if (!P.ink) d *= 1 - (1 - d) * (1 - d) * 0.95 * clamp(1.7 - nz * 2.4, 0, 1) * (0.3 + clamp(y / tailN, 0, 1));
+        if (!(embed ? P.embed : P).ink) d *= 1 - (1 - d) * (1 - d) * 0.95 * clamp(1.7 - nz * 2.4, 0, 1) * (0.3 + clamp(y / tailN, 0, 1));
         const k = j * cols + i;
         const v = clamp(d, 0, 1) * depth * sink;
         if (v > dens[k]) dens[k] = v;
