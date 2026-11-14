@@ -33,13 +33,13 @@ const THEMES = {
   },
 };
 THEMES.dark.embed = {
-  tileLo: [52, 56, 68], tileHi: [222, 226, 236], tileInk: 0.42, tileSocket: null,
-  ...THEMES.dark, key: "dark-embed", page: [13, 17, 23], edge: null, sky: null, ground: [120, 122, 132], glowA: 0.36,
+  ...THEMES.dark, key: "dark-embed", page: [13, 17, 23], edge: [13, 17, 23, 1], sky: [34, 38, 48],
+  ground: [6, 8, 12], groundEdge: [70, 76, 90],
 };
 THEMES.light.embed = {
-  tileLo: [228, 229, 233], tileHi: [118, 120, 130], tileInk: 0.5, tileSocket: [64, 66, 76],
-  ...THEMES.light, key: "light-embed", page: [255, 255, 255], edge: null, sky: null, ground: [132, 132, 140],
-  fog: [150, 150, 158], ghostLo: [186, 186, 192], ghostHi: [40, 40, 46], glow: [120, 122, 132], glowA: 0.22,
+  ...THEMES.light, key: "light-embed", page: [255, 255, 255], edge: [255, 255, 255, 1], sky: [226, 228, 233],
+  ground: [78, 80, 88], groundEdge: [120, 122, 130], fog: [140, 142, 150],
+  ghostLo: [196, 198, 204], ghostHi: [48, 50, 58], glow: [150, 154, 166], glowA: 0.32, socket: [40, 42, 50],
 };
 for (const t of [THEMES.dark, THEMES.light, THEMES.dark.embed, THEMES.light.embed]) {
   t.css = [];
@@ -55,7 +55,8 @@ const SOCKET = GL + FL;
 export function mount(canvas, opts = {}) {
   const ctx = canvas.getContext("2d");
   const rec = opts.record || null;
-  // embed: a recording on GitHub's own README background (#0d1117 / #ffffff), so it melts into the page
+  // embed: the site's look recorded on GitHub's README background (#0d1117 / #ffffff), its edges
+  // fading into that colour so the animation melts into the profile page
   const embed = !!(rec && rec.embed);
   const loopT = rec ? rec.frames / rec.fps : 0;
   const seed = rec ? 2258 : (Math.random() * 1e6) | 0;
@@ -82,7 +83,7 @@ export function mount(canvas, opts = {}) {
     W = w; H = h; dpr = ratio; S = Math.min(W, H);
     canvas.width = Math.round(W * dpr);
     canvas.height = Math.round(H * dpr);
-    cw = embed ? 12 : clamp(Math.round(W / 150), 7, 11);
+    cw = embed ? 10 : clamp(Math.round(W / 150), 7, 11);
     ch = Math.round(cw * 1.35);
     cols = Math.ceil(W / cw);
     rows = Math.ceil(H / ch);
@@ -117,7 +118,7 @@ export function mount(canvas, opts = {}) {
     g.beginPath(); g.moveTo(0, H);
     for (let x = 0; x <= W; x += 6) g.lineTo(x, hill(x));
     g.lineTo(W, H); g.closePath(); g.fill();
-    const u = S * (embed ? 0.13 : 0.075);
+    const u = S * (embed ? 0.1 : 0.075);
     let x = W * 0.03;
     while (x < W * 0.84) {
       const kind = r(), hgt = u * (0.7 + r() * 0.9), wid = hgt * (0.5 + r() * 0.25), lean = (r() - 0.5) * 0.25;
@@ -156,14 +157,22 @@ export function mount(canvas, opts = {}) {
   function font() { return `600 ${Math.round(ch * 0.8)}px "Geist Mono", ui-monospace, Consolas, Menlo, monospace`; }
 
   /** Sky, graves and the vignette never move: paint them once per theme. */
+  /** Break up 8-bit gradient steps (they show as rings on a dark screen) with a little noise. */
+  function dither(c, alpha) {
+    const x = c.getContext("2d"), im = x.getImageData(0, 0, c.width, c.height), d = im.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const n = (Math.random() + Math.random() - 1) * 2.2;
+      if (alpha) { if (d[i + 3]) d[i + 3] += n; }
+      else { d[i] += n; d[i + 1] += n; d[i + 2] += n; }
+    }
+    x.putImageData(im, 0, 0);
+  }
+
   function cache(pal) {
     const key = pal.key;
     if (caches[key]) return caches[key];
     const mk = () => { const c = document.createElement("canvas"); c.width = canvas.width; c.height = canvas.height; const x = c.getContext("2d"); x.scale(dpr, dpr); return [c, x]; };
     const [bg, b] = mk();
-    if (embed) { // the README shows only the ghosts and a little fog: graves read as noise at that size
-      return (caches[key] = { bg, vg: null });
-    }
     b.fillStyle = rgba(pal.page); b.fillRect(0, 0, W, H);
     const sky = b.createLinearGradient(0, horizon - S * 0.55, 0, horizon + S * 0.05);
     sky.addColorStop(0, rgba(pal.sky, 0)); sky.addColorStop(1, rgba(pal.sky, 1));
@@ -178,9 +187,20 @@ export function mount(canvas, opts = {}) {
       if (gd < 0.75) { b.fillStyle = rgba(pal.groundEdge, 0.7); b.fillText(gd < 0.45 ? "." : ":", (i + 0.5) * cw, (j + 0.5) * ch); }
     }
     const [vg, v] = mk();
-    const grad = v.createRadialGradient(W / 2, H * 0.45, S * 0.3, W / 2, H * 0.45, Math.hypot(W, H) * 0.62);
+    const grad = embed ? v.createRadialGradient(W / 2, H * 0.5, S * 0.55, W / 2, H * 0.5, W * 0.56)
+      : v.createRadialGradient(W / 2, H * 0.45, S * 0.3, W / 2, H * 0.45, Math.hypot(W, H) * 0.62);
     grad.addColorStop(0, rgba(pal.edge, 0)); grad.addColorStop(1, rgba(pal.edge, pal.edge[3]));
     v.fillStyle = grad; v.fillRect(0, 0, W, H);
+    if (embed) { // melt into the README: the bottom (ground) and top edges fade out completely
+      const bot = v.createLinearGradient(0, H * 0.8, 0, H);
+      bot.addColorStop(0, rgba(pal.edge, 0)); bot.addColorStop(1, rgba(pal.edge, 1));
+      v.fillStyle = bot; v.fillRect(0, H * 0.8, W, H * 0.2);
+      const top = v.createLinearGradient(0, 0, 0, H * 0.12);
+      top.addColorStop(0, rgba(pal.edge, 1)); top.addColorStop(1, rgba(pal.edge, 0));
+      v.fillStyle = top; v.fillRect(0, 0, W, H * 0.12);
+    }
+    dither(bg, false);
+    dither(vg, true);
     return (caches[key] = { bg, vg });
   }
 
@@ -208,7 +228,7 @@ export function mount(canvas, opts = {}) {
     };
   }
 
-  const radius = (g) => clamp(S * (0.055 + 0.03 * g.z), 22, 72) * g.K.size * (embed ? 1.95 : rec ? 1.15 : 1);
+  const radius = (g) => clamp(S * (0.055 + 0.03 * g.z), 22, 72) * g.K.size * (embed ? 1.45 : rec ? 1.15 : 1);
 
   /** Where the shroud trails: away from the motion, and down when still. */
   function trailTilt(g, vx, vy) {
@@ -262,7 +282,7 @@ export function mount(canvas, opts = {}) {
     g.blink = v > 0.5 && v < 0.52 ? 1 : 0;
     const burst = g.kind === "wraith" && v > 0.8 && v < 0.86;
     g.glitch = burst ? 1 : 0;
-    g.vis = burst ? (Math.sin(t * TAU * 24 / loopT * 10) > -0.2 ? 0.9 : 0.25) : 1;
+    g.vis = burst ? 0.72 + 0.28 * Math.cos(TAU * 12 * t / loopT) : 1; // a slow waver, never a strobe
   }
 
   /** Live: how many there are drifts over time; they come and go on their own. */
@@ -356,7 +376,7 @@ export function mount(canvas, opts = {}) {
       g.blinkAt -= dt;
       if (g.blinkAt <= 0) { g.blink = 1; g.blinkAt = 4 + Math.random() * 7; }
       g.blink = Math.max(0, g.blink - dt * 5);
-      if (Math.random() < dt * 0.04) g.flick = 0.6;
+      if (Math.random() < dt * 0.015) g.flick = 0.8;
       g.flick = Math.max(0, g.flick - dt);
       // fade in on arrival; dissolve when leaving, or simply drift off the page
       let life = smoothstep(0, g.fadeIn, g.age);
@@ -366,9 +386,10 @@ export function mount(canvas, opts = {}) {
         const off = g.x < -r * 3 || g.x > W + r * 3 || g.y < -r * 4 || g.y > H + r * 2;
         if (g.out > 2.6 || off) g.gone = true;
       }
-      const flickering = g.flick > 0 || (g.age < g.fadeIn && g.fadeIn > 1);
+      const flickering = g.flick > 0; // arrivals simply fade in
       g.glitch = Math.max(flickering ? 1 : 0, g.startle * 0.8);
-      g.vis = life * (flickering && Math.sin(time * 60 + g.id) > 0.3 ? 0.3 : 1) * (1 - 0.85 * (g.scatter || 0));
+      // a flicker is a slow waver in strength, never a hard on/off strobe
+      g.vis = life * (flickering ? 0.72 + 0.28 * Math.cos(time * 9 + g.id) : 1) * (1 - 0.85 * (g.scatter || 0));
     }
     nextFlash -= dt;
     if (nextFlash <= 0) { flash = 1; nextFlash = 18 + Math.random() * 26; }
@@ -435,7 +456,7 @@ export function mount(canvas, opts = {}) {
         }
         if (d < 0.02) continue;
         const nz = fbm(x * 1.7 + g.id * 13 - g.wave * 0.2, y * 1.4 - g.wave * 0.35, seed + 61, 3);
-        if (!embed) d *= 1 - (1 - d) * (1 - d) * 0.95 * clamp(1.7 - nz * 2.4, 0, 1) * (0.3 + clamp(y / tailN, 0, 1)); // tiles want clean edges
+        d *= 1 - (1 - d) * (1 - d) * 0.95 * clamp(1.7 - nz * 2.4, 0, 1) * (0.3 + clamp(y / tailN, 0, 1));
         const k = j * cols + i;
         const v = clamp(d, 0, 1) * depth * sink;
         if (v > dens[k]) dens[k] = v;
@@ -459,51 +480,11 @@ export function mount(canvas, opts = {}) {
   function updateGhosts(t, dt) {
     dens.fill(0); hole.fill(0);
     for (const g of ghosts) stampGhost(g, t);
-    const keep = Math.exp(-dt * (embed ? 16 : 7));
+    const keep = Math.exp(-dt * 7);
     for (let k = 0; k < trail.length; k++) { const a = trail[k] * keep; trail[k] = dens[k] > a ? dens[k] : a; }
   }
 
   // --------------------------------------------------------------- drawing
-
-  const TILE = "t%SX8@#"; // dense in shadow, sparse in light
-
-  /** README style: every cell of a ghost is a small tile with a glyph on it, with a gap between
-   *  tiles, like ascii-pond's koi. No glow, so the shapes stay crisp when GitHub scales them. */
-  function drawTiles(pal) {
-    ctx.font = font();
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    for (let k = 0, n = trail.length; k < n; k++) {
-      const i = k % cols, j = (k / cols) | 0, x = i * cw, y = j * ch;
-      const v = trail[k], h = hole[k];
-      if (pal.tileSocket && h > 0.25) { // hollow face, as dark tiles
-        ctx.globalAlpha = 0.35 + 0.6 * smoothstep(0.25, 0.6, h);
-        ctx.fillStyle = rgba(pal.tileSocket);
-        ctx.fillRect(x + 1, y + 1, cw - 1, ch - 1);
-        continue;
-      }
-      if (v < 0.07) {
-        // a few specks of fog, nothing more
-        const raw = fogGrid[((j / 2) | 0) * gcols + ((i / 2) | 0)];
-        const f = smoothstep(0.62, 0.8, raw) * (0.4 + 0.6 * lowFog(j));
-        if (f > 0.05 && hash3(i, j, 17) < f * 0.5) {
-          ctx.globalAlpha = 0.35 * f + 0.1;
-          ctx.fillStyle = rgba(pal.fog);
-          ctx.fillText(".", x + cw / 2, y + ch / 2);
-        }
-        continue;
-      }
-      const lum = clamp(v, 0, 1);
-      const col = mixRgb(pal.tileLo, pal.tileHi, Math.pow(lum, 0.8));
-      ctx.globalAlpha = 0.25 + 0.75 * smoothstep(0.07, 0.4, v);
-      ctx.fillStyle = rgba(col);
-      ctx.fillRect(x + 1, y + 1, cw - 1, ch - 1);
-      const jit = (hash3(i, j, 7) * 3) | 0;
-      ctx.fillStyle = rgba(col.map((c) => c * pal.tileInk));
-      ctx.fillText(TILE[clamp(Math.round((1 - lum) * 4) + jit, 0, 6)], x + cw / 2, y + ch / 2);
-    }
-    ctx.globalAlpha = 1;
-  }
 
   function drawScene(t) {
     const pal = embed ? P.embed : P;
@@ -511,7 +492,6 @@ export function mount(canvas, opts = {}) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = "source-over";
-    if (embed) { ctx.fillStyle = rgba(pal.page); ctx.fillRect(0, 0, canvas.width, canvas.height); }
     ctx.drawImage(c.bg, 0, 0);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     if (flash > 0 && pal === THEMES.dark && !embed) { // lightning: two quick pulses, then a slow fade
@@ -520,7 +500,6 @@ export function mount(canvas, opts = {}) {
       g.addColorStop(0, rgba(pal.flash, a * 0.05)); g.addColorStop(1, rgba(pal.flash, a * 0.35));
       ctx.fillStyle = g; ctx.fillRect(0, 0, W, horizon + ch);
     }
-    if (embed) { drawTiles(pal); return; }
 
     // soft light that follows each wraith's exact shape
     const gd = glowImg.data, gl = pal.glow;
@@ -531,7 +510,7 @@ export function mount(canvas, opts = {}) {
     }
     gctx.putImageData(glowImg, 0, 0);
     ctx.save();
-    ctx.globalCompositeOperation = embed ? "source-over" : pal.blend;
+    ctx.globalCompositeOperation = pal.blend;
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = "high";
     ctx.drawImage(glowC, -cw * 0.5, -ch * 0.5, (cols + 1) * cw, (rows + 1) * ch);
@@ -558,7 +537,7 @@ export function mount(canvas, opts = {}) {
         } else {
           const fx = i / 2, fxi = fx | 0, ffx = fx - fxi, q = fyi * gcols + fxi;
           const raw = lerp(lerp(fogGrid[q], fogGrid[q + 1], ffx), lerp(fogGrid[q + gcols], fogGrid[q + gcols + 1], ffx), ffy);
-          let f = smoothstep(0.48, 0.76, raw) * (0.35 + 0.65 * lf) * (embed ? 0.55 : 1);
+          let f = smoothstep(0.48, 0.76, raw) * (0.35 + 0.65 * lf);
           if (ground[k] > 0.15 && (f < 0.55 || pal.socket)) continue; // pale fog over dark ground reads as stripes in the light theme
           let boost = 0;
           if (lit > 0.01) { const dx = (i + 0.5) * cw - lx, dy = cy - ly; boost = lit * Math.exp(-(dx * dx + dy * dy) / lr2); }
