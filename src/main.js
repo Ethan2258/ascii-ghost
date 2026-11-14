@@ -7,9 +7,10 @@ const params = new URLSearchParams(location.search);
 const root = document.documentElement;
 
 if (params.has("record")) {
-  // ?record=1320,450,240,24  →  window.__sky.frame(i) returns frame i as a PNG data URL.
+  // ?record=1320,450,240,24[&embed]  →  window.__sky.frame(i) returns frame i as a PNG data URL;
+  // with &embed it is drawn on GitHub's README background colour, with no backdrop of its own.
   const [width, height, frames, fps] = (params.get("record") || "").split(",").map(Number);
-  const sky = mount(canvas, { record: { width: width || 1320, height: height || 450, frames: frames || 240, fps: fps || 24 } });
+  const sky = mount(canvas, { record: { width: width || 1320, height: height || 450, frames: frames || 240, fps: fps || 24, embed: params.has("embed") } });
   sky.setTheme(params.get("theme") === "light");
   window.__sky = sky;
 } else {

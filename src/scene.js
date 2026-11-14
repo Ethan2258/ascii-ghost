@@ -16,13 +16,13 @@ const GL = 32, FL = 16; // ghost / fog colour levels
 const THEMES = {
   dark: {
     page: [10, 10, 12], edge: [0, 0, 0, 0.82], sky: [40, 41, 47],
-    fog: [124, 126, 134], ground: [6, 6, 8], groundEdge: [92, 94, 102],
+    embedPage: [13, 17, 23], fog: [124, 126, 134], embedGround: [120, 122, 132], ground: [6, 6, 8], groundEdge: [92, 94, 102],
     ghostLo: [70, 72, 82], ghostHi: [232, 236, 242], glow: [150, 160, 182], glowA: 0.42, blend: "lighter",
     ripple: [196, 198, 206], flash: [190, 198, 222],
   },
   light: {
     page: [226, 225, 222], edge: [70, 70, 74, 0.38], sky: [200, 200, 204],
-    fog: [104, 104, 110], ground: [62, 62, 66], groundEdge: [96, 96, 102],
+    embedPage: [255, 255, 255], fog: [104, 104, 110], embedGround: [128, 128, 136], ground: [62, 62, 66], groundEdge: [96, 96, 102],
     ghostLo: [150, 150, 156], ghostHi: [18, 18, 22], glow: [70, 70, 78], glowA: 0.3, blend: "source-over",
     ripple: [60, 60, 66], flash: [255, 255, 255],
   },
@@ -39,6 +39,8 @@ for (const t of Object.values(THEMES)) {
 export function mount(canvas, opts = {}) {
   const ctx = canvas.getContext("2d");
   const rec = opts.record || null;
+  // embed: a recording on GitHub's own README background (#0d1117 / #ffffff), so it melts into the page
+  const embed = !!(rec && rec.embed);
   const loopT = rec ? rec.frames / rec.fps : 0;
   const seed = rec ? 2258 : (Math.random() * 1e6) | 0;
   const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
@@ -46,7 +48,7 @@ export function mount(canvas, opts = {}) {
   let P = THEMES[opts.theme === "light" ? "light" : "dark"];
 
   let W = 0, H = 0, S = 0, dpr = 1, cw = 9, ch = 12, cols = 0, rows = 0, horizon = 0;
-  let dens, trail, ground, avoid, gcols = 0, grows = 0, fogGrid;
+  let dens, trail, ground, hillRow, avoid, gcols = 0, grows = 0, fogGrid;
   let opB, opK, opC, counts, starts, order;
   let ghosts = [];
   const ripples = [];
@@ -130,6 +132,8 @@ export function mount(canvas, opts = {}) {
     const a = g.getImageData(0, 0, cols, rows).data;
     ground = new Float32Array(cols * rows);
     for (let k = 0; k < ground.length; k++) ground[k] = a[k * 4 + 3] / 255;
+    hillRow = new Int16Array(cols);
+    for (let i = 0; i < cols; i++) hillRow[i] = Math.floor(hill((i + 0.5) * cw) / ch);
   }
 
   function font() { return `600 ${Math.round(ch * 0.8)}px "Geist Mono", ui-monospace, Consolas, Menlo, monospace`; }
@@ -140,6 +144,20 @@ export function mount(canvas, opts = {}) {
     if (caches[key]) return caches[key];
     const mk = () => { const c = document.createElement("canvas"); c.width = canvas.width; c.height = canvas.height; const x = c.getContext("2d"); x.scale(dpr, dpr); return [c, x]; };
     const [bg, b] = mk();
+    if (embed) { // no backdrop at all: the graves are loose glyphs and the ground fades out under them
+      b.font = font(); b.textAlign = "center"; b.textBaseline = "middle";
+      for (let k = 0; k < ground.length; k++) {
+        const gd = ground[k];
+        if (gd < 0.15) continue;
+        const i = k % cols, j = (k / cols) | 0;
+        const fade = 1 - smoothstep(0, 3.5, j - hillRow[i]);
+        if (fade <= 0.02) continue;
+        const h = hash3(i, j, 4), edge = gd < 0.75;
+        b.fillStyle = rgba(pal.embedGround, (edge ? 0.55 : 0.85) * fade);
+        b.fillText(edge ? (gd < 0.45 ? "." : ":") : h < 0.4 ? "#" : h < 0.7 ? "%" : h < 0.9 ? "=" : "+", (i + 0.5) * cw, (j + 0.5) * ch);
+      }
+      return (caches[key] = { bg, vg: null });
+    }
     b.fillStyle = rgba(pal.page); b.fillRect(0, 0, W, H);
     const sky = b.createLinearGradient(0, horizon - S * 0.55, 0, horizon + S * 0.05);
     sky.addColorStop(0, rgba(pal.sky, 0)); sky.addColorStop(1, rgba(pal.sky, 1));
@@ -423,9 +441,10 @@ export function mount(canvas, opts = {}) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = "source-over";
+    if (embed) { ctx.fillStyle = rgba(pal.embedPage); ctx.fillRect(0, 0, canvas.width, canvas.height); }
     ctx.drawImage(c.bg, 0, 0);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    if (flash > 0 && pal === THEMES.dark) { // lightning: two quick pulses, then a slow fade
+    if (flash > 0 && pal === THEMES.dark && !embed) { // lightning: two quick pulses, then a slow fade
       const a = flash > 0.75 ? (flash - 0.75) * 4 : flash > 0.55 ? 0.15 : flash * 0.5;
       const g = ctx.createLinearGradient(0, 0, 0, horizon);
       g.addColorStop(0, rgba(pal.flash, a * 0.05)); g.addColorStop(1, rgba(pal.flash, a * 0.35));
@@ -441,7 +460,7 @@ export function mount(canvas, opts = {}) {
     }
     gctx.putImageData(glowImg, 0, 0);
     ctx.save();
-    ctx.globalCompositeOperation = pal.blend;
+    ctx.globalCompositeOperation = embed ? "source-over" : pal.blend;
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = "high";
     ctx.drawImage(glowC, -cw * 0.5, -ch * 0.5, (cols + 1) * cw, (rows + 1) * ch);
@@ -508,7 +527,7 @@ export function mount(canvas, opts = {}) {
     }
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.drawImage(c.vg, 0, 0);
+    if (c.vg) ctx.drawImage(c.vg, 0, 0);
   }
 
   function measure() {
