@@ -29,7 +29,7 @@ const THEMES = {
     page: [7, 8, 8], skyTop: [4, 5, 5], edge: [0, 0, 0, 0.9], sky: [38, 50, 45],
     fog: [104, 122, 114], ground: [3, 4, 4], groundEdge: [62, 76, 70],
     ghostLo: [62, 66, 68], ghostHi: [226, 230, 231], glow: [142, 150, 150], glowA: 0.46, blend: "lighter",
-    socket: null, ripple: [170, 196, 186], flashC: [178, 198, 194],
+    socket: null, ripple: [170, 196, 186], flashC: [178, 198, 194], mist: [96, 112, 106, 0.42], whisper: [150, 168, 160],
   },
   // light: a dead, overcast day; low grey-green light, darker overhead, near-black graves
   // under a heavy vignette, pale fog lying on the ground, and the ghosts as dark shadow
@@ -39,7 +39,7 @@ const THEMES = {
     fog: [222, 230, 224], ground: [26, 31, 30], groundEdge: [78, 88, 84], noGroundFog: true,
     // dark smoke wrapped in a pale, cold aura, so each one stands out of the grey
     ghostLo: [118, 126, 122], ghostHi: [10, 13, 13], glow: [234, 242, 237], glowA: 0.5, blend: "source-over",
-    socket: null, ripple: [26, 32, 32],
+    socket: null, ripple: [26, 32, 32], mist: [236, 242, 238, 0.6], whisper: [40, 48, 46],
   },
 };
 THEMES.dark.embed = {
@@ -78,11 +78,16 @@ export function mount(canvas, opts = {}) {
   let ghosts = [];
   const ripples = [];
   let avoidRects = [];
+  const WHISPERS = ["behind you", "do not look", "we never left", "stay", "it is cold here", "who is there", "come closer", "you can see us"];
+  let whisper = null, nextWhisper = 12 + Math.random() * 14;
   const ptr = { x: -1e5, y: -1e5, lastMove: -1e9, light: 0 };
   let time = 0, flash = 0, nextFlash = 20 + Math.random() * 20;
   let caches = {};
+  const fogC = document.createElement("canvas"); // one pixel per fog node, scaled up smooth
+  const fctx = fogC.getContext("2d", { willReadFrequently: true }); // a CPU canvas: putImageData every frame stays cheap
+  let fogImg = null;
   const glowC = document.createElement("canvas");
-  const gctx = glowC.getContext("2d");
+  const gctx = glowC.getContext("2d", { willReadFrequently: true });
   let glowImg = null;
 
   // --------------------------------------------------------------- layout
@@ -91,7 +96,7 @@ export function mount(canvas, opts = {}) {
     W = w; H = h; dpr = ratio; S = Math.min(W, H);
     canvas.width = Math.round(W * dpr);
     canvas.height = Math.round(H * dpr);
-    cw = embed ? 10 : clamp(Math.round(W / 150), 7, 11);
+    cw = embed ? 9 : clamp(Math.round(W / 165), 6, 10);
     ch = Math.round(cw * 1.35);
     cols = Math.ceil(W / cw);
     rows = Math.ceil(H / ch);
@@ -102,6 +107,7 @@ export function mount(canvas, opts = {}) {
     counts = new Uint32Array(GL + FL + 1); starts = new Uint32Array(GL + FL + 1);
     gcols = Math.ceil(cols / 2) + 2; grows = Math.ceil(rows / 2) + 2;
     fogGrid = new Float32Array(gcols * grows);
+    fogC.width = gcols; fogC.height = grows; fogImg = fctx.createImageData(gcols, grows);
     glowC.width = cols; glowC.height = rows;
     glowImg = gctx.createImageData(cols, rows);
     buildGround();
@@ -156,6 +162,21 @@ export function mount(canvas, opts = {}) {
       for (let i = 0; i < n2; i++) branch(x1, y1, ang + (r() - 0.5) * 1.3 - 0.08, len * (0.62 + r() * 0.15), wdt * 0.62, depth - 1);
     };
     branch(tx, hill(tx) + 4, -Math.PI / 2 - 0.12, S * 0.22, S * 0.035, 5);
+    if (!embed) {
+      const t2 = W * 0.06; // a smaller, bent tree on the other side
+      branch(t2, hill(t2) + 4, -Math.PI / 2 + 0.3, S * 0.13, S * 0.022, 4);
+      // a broken iron fence along part of the crest: leaning pickets and a sagging rail
+      const f0 = W * 0.34, f1 = W * 0.62, step = S * 0.022;
+      g.lineWidth = Math.max(1.5, cw * 0.35);
+      for (let x = f0, n = 0; x < f1; x += step, n++) {
+        if (r() < 0.14) continue; // missing pickets
+        const hy = hill(x), lean = (r() - 0.5) * 0.35, hgt = S * (0.05 + r() * 0.014);
+        g.beginPath(); g.moveTo(x, hy + 3); g.lineTo(x + Math.sin(lean) * hgt, hy - Math.cos(lean) * hgt); g.stroke();
+      }
+      g.beginPath();
+      for (let x = f0; x <= f1; x += step) { const y = hill(x) - S * 0.034 + Math.sin(x / W * 40) * S * 0.004; x === f0 ? g.moveTo(x, y) : g.lineTo(x, y); }
+      g.stroke();
+    }
     const a = g.getImageData(0, 0, cols, rows).data;
     ground = new Float32Array(cols * rows);
     for (let k = 0; k < ground.length; k++) ground[k] = a[k * 4 + 3] / 255;
@@ -345,11 +366,24 @@ export function mount(canvas, opts = {}) {
     if (alive < want && Math.random() < dt * 0.6) {
       const roll = Math.random();
       const g = makeGhost(roll < 0.42 ? "wraith" : roll < 0.8 ? "wisp" : roll < 0.93 ? "shade" : "passer", Math.random);
-      if (g.K.passer || Math.random() < 0.5) { // drift in from an edge
-        const side = Math.random() < 0.5 ? -1 : 1, r = radius(g);
-        g.x = side < 0 ? -r * 2 : W + r * 2;
-        g.vx = -side * g.speed; g.hd = side < 0 ? 0 : Math.PI;
-        g.fadeIn = 0.4;
+      // They come from every side: in from the left or right (whichever half of the page is
+      // emptier), down out of the dark above, up out of a grave, or simply out of thin air.
+      const r = radius(g);
+      const left = ghosts.filter((o) => o.x < W / 2).length, right = ghosts.length - left;
+      const side = left === right ? (Math.random() < 0.5 ? -1 : 1) : left < right ? -1 : 1;
+      const how = g.K.passer ? 0 : Math.random();
+      if (how < 0.34) { // from the side
+        g.x = side < 0 ? -r * 2 : W + r * 2; g.y = H * (0.1 + Math.random() * 0.55);
+        g.vx = -side * g.speed * 1.5; g.hd = side < 0 ? 0 : Math.PI; g.fadeIn = 0.4;
+      } else if (how < 0.52) { // from above
+        g.x = W * (side < 0 ? 0.08 + Math.random() * 0.42 : 0.5 + Math.random() * 0.42); g.y = -r * 3;
+        g.vy = g.speed * 1.5; g.hd = Math.PI / 2; g.fadeIn = 0.4;
+      } else if (how < 0.78) { // rising out of the ground
+        g.x = W * (side < 0 ? 0.08 + Math.random() * 0.42 : 0.5 + Math.random() * 0.42); g.y = horizon + r * 1.5;
+        g.vy = -g.speed * 1.6; g.hd = -Math.PI / 2; g.fadeIn = 0.4;
+        g.mood = "sink"; g.phase = "up"; g.moodT = 12; // it keeps rising until it is clear of the graves
+      } else { // out of thin air, on the emptier side
+        g.x = W * (side < 0 ? 0.08 + Math.random() * 0.42 : 0.5 + Math.random() * 0.42);
       }
       ghosts.push(g);
     }
@@ -540,6 +574,13 @@ export function mount(canvas, opts = {}) {
       if (P === THEMES.dark) for (const g of ghosts) g.startle = Math.max(g.startle, 0.25);
     }
     flash = Math.max(0, flash - dt * 1.1);
+    // now and then a few words surface in the fog, letter by letter, and sink again
+    if (!embed && (nextWhisper -= dt) <= 0) {
+      const text = WHISPERS[(Math.random() * WHISPERS.length) | 0];
+      whisper = { text, t0: time, i: Math.floor(cols * (0.15 + Math.random() * 0.6)), j: Math.floor(rows * (0.12 + Math.random() * 0.5)) };
+      nextWhisper = 22 + Math.random() * 26;
+    }
+    if (whisper && time - whisper.t0 > 7) whisper = null;
     for (let i = ripples.length - 1; i >= 0; i--) if (time - ripples[i].t0 > 2.6) ripples.splice(i, 1);
   }
 
@@ -569,6 +610,7 @@ export function mount(canvas, opts = {}) {
   // The shroud hangs from a spine of 12 links, like a rope: the head drags it, gravity pulls it
   // down, so it trails along the path just travelled and swings out on every turn.
   const SPINE = 12;
+  const segVx = new Float32Array(SPINE), segVy = new Float32Array(SPINE), segInv = new Float32Array(SPINE), segLenInv = new Float32Array(SPINE), widthAt = new Float32Array(SPINE + 1);
   function updateSpine(g, dt) {
     const r = radius(g), seg = r * 0.5 * g.K.tail;
     const bob = Math.sin(g.wave * 0.5 + g.ph2) * r * 0.16;
@@ -580,7 +622,7 @@ export function mount(canvas, opts = {}) {
     for (let i = 1; i < SPINE; i++) {
       const p = sp[i], q = sp[i - 1], f = i / SPINE;
       p[1] += (0.5 + 0.4 * f) * r * dt; // gravity: it hangs when still
-      p[0] += Math.sin(time * 1.4 + i * 0.55 + g.ph) * r * 0.5 * f * dt; // and flutters
+      p[0] += Math.sin(time * 1.4 + i * 0.55 + g.ph) * r * (0.4 + 0.9 * f) * f * dt; // and flutters, curling at its end
       const dx = p[0] - q[0], dy = p[1] - q[1], d = Math.hypot(dx, dy) || 1;
       p[0] = q[0] + (dx / d) * seg; p[1] = q[1] + (dy / d) * seg;
     }
@@ -610,6 +652,13 @@ export function mount(canvas, opts = {}) {
     const i0 = Math.max(0, Math.floor(x0 / cw)), i1 = Math.min(cols - 1, Math.floor(x1 / cw));
     const j0 = Math.max(0, Math.floor(y0 / ch)), j1 = Math.min(rows - 1, Math.floor(y1 / ch));
     const N = SPINE - 1, slim = K.slim;
+    // per-link values, worked out once instead of for every cell
+    for (let n = 0; n < N; n++) {
+      const vx = sp[n + 1][0] - sp[n][0], vy = sp[n + 1][1] - sp[n][1], ll = vx * vx + vy * vy || 1;
+      segVx[n] = vx; segVy[n] = vy; segInv[n] = 1 / ll; segLenInv[n] = 1 / Math.sqrt(ll);
+    }
+    for (let n = 0; n <= N; n++) widthAt[n] = r * slim * (0.98 * Math.pow(1 - n / N, 0.62) + 0.05);
+    const reach2 = (r * slim * 1.35) ** 2;
     for (let j = j0; j <= j1; j++) {
       const cy = (j + 0.5) * ch;
       const sink = 1 - 0.85 * lowFog(j);
@@ -626,18 +675,20 @@ export function mount(canvas, opts = {}) {
         // the shroud: distance to the spine, with a width that tapers from the shoulders
         let body = 0, bs = 1;
         for (let n = 0; n < N; n++) {
-          const ax = sp[n][0], ay = sp[n][1], bx = sp[n + 1][0], by = sp[n + 1][1];
-          const vx = bx - ax, vy = by - ay, ll = vx * vx + vy * vy || 1;
-          let u = ((cx - ax) * vx + (cy - ay) * vy) / ll;
+          const ax = sp[n][0], ay = sp[n][1], vx = segVx[n], vy = segVy[n];
+          const px = cx - ax, py = cy - ay;
+          let u = (px * vx + py * vy) * segInv[n];
           if (n === 0 && u < 0) continue; // nothing above the neck: that is the face
-          u = clamp(u, 0, 1);
-          const qx = cx - (ax + vx * u), qy = cy - (ay + vy * u), q = Math.hypot(qx, qy);
+          u = u < 0 ? 0 : u > 1 ? 1 : u;
+          const qx = px - vx * u, qy = py - vy * u, q2 = qx * qx + qy * qy;
+          if (q2 > reach2) continue; // too far from this link to matter
           const sN = (n + u) / N;
-          const side = (vx * qy - vy * qx) / Math.sqrt(ll); // signed distance across the shroud
-          let wd = r * slim * (0.98 * Math.pow(1 - sN, 0.62) + 0.05);
-          // the hem tears into strands that sway
-          const tat = smoothstep(0.35, 1, sN) * (0.5 - 0.5 * Math.cos(side / r * 7.5 + sN * 5 + g.wave * 0.75));
-          wd *= 1 - 0.75 * tat;
+          let wd = widthAt[n] + (widthAt[n + 1] - widthAt[n]) * u;
+          if (sN > 0.35) { // the hem tears into strands that sway
+            const side = (vx * qy - vy * qx) * segLenInv[n];
+            wd *= 1 - 0.75 * smoothstep(0.35, 1, sN) * (0.5 - 0.5 * Math.cos(side / r * 7.5 + sN * 5 + g.wave * 0.75));
+          }
+          const q = Math.sqrt(q2);
           const v = smoothstep(wd * 1.25, wd * 0.4, q) * (0.82 - 0.42 * sN);
           if (v > body) { body = v; bs = sN; }
         }
@@ -687,6 +738,22 @@ export function mount(canvas, opts = {}) {
       const lg = ctx.createLinearGradient(0, 0, 0, horizon);
       lg.addColorStop(0, rgba(pal.flashC, a * 0.08)); lg.addColorStop(1, rgba(pal.flashC, a * 0.42));
       ctx.fillStyle = lg; ctx.fillRect(0, 0, W, horizon + ch);
+    }
+
+    // fog banks rolling low over the graves
+    {
+      const fd = fogImg.data, fc = pal.mist;
+      for (let gj = 0; gj < grows; gj++) {
+        const low = 0.12 + 0.88 * lowFog(gj * 2);
+        for (let gi = 0; gi < gcols; gi++) {
+          const o = (gj * gcols + gi) * 4;
+          fd[o] = fc[0]; fd[o + 1] = fc[1]; fd[o + 2] = fc[2];
+          fd[o + 3] = 255 * fc[3] * smoothstep(0.4, 0.78, fogGrid[gj * gcols + gi]) * low;
+        }
+      }
+      fctx.putImageData(fogImg, 0, 0);
+      ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(fogC, -cw, -ch, gcols * 2 * cw, grows * 2 * ch);
     }
 
     // soft light that follows each wraith's exact shape
@@ -765,6 +832,16 @@ export function mount(canvas, opts = {}) {
       }
     }
 
+    if (whisper) {
+      const age = t - whisper.t0;
+      for (let n = 0; n < whisper.text.length; n++) {
+        const a = smoothstep(0, 1.2, age - n * 0.09) * (1 - smoothstep(4.2, 6.8, age)) * (0.75 + 0.25 * Math.sin(t * 3 + n));
+        const k = whisper.j * cols + whisper.i + n * 2;
+        if (a <= 0.02 || whisper.text[n] === " " || trail[k] > 0.1) continue;
+        ctx.fillStyle = rgba(pal.whisper, 0.42 * a * (1 - 0.8 * (avoid[k] || 0)));
+        ctx.fillText(whisper.text[n], (whisper.i + n * 2 + 0.5) * cw, (whisper.j + 0.5) * ch + Math.sin(t * 1.3 + n * 0.7) * 1.5);
+      }
+    }
     for (const rp of ripples) {
       const age = t - rp.t0, rad = 14 + age * 90, a = 1 - age / 2.6;
       if (a <= 0) continue;
@@ -778,7 +855,9 @@ export function mount(canvas, opts = {}) {
     }
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    if (c.vg) ctx.drawImage(c.vg, 0, 0);
+    if (c.vg) {
+      ctx.drawImage(c.vg, 0, 0);
+    }
   }
 
   /** Mark the cells under a box (canvas pixels) as dimmed, with a little slack round it. */
