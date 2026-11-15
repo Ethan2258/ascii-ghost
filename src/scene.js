@@ -46,8 +46,14 @@ THEMES.dark.embed = {
   ...THEMES.dark, key: "dark-embed", page: [13, 17, 23], skyTop: null, edge: [13, 17, 23, 1], sky: [26, 33, 38],
   ground: [6, 8, 10], groundEdge: [60, 72, 70],
 };
-THEMES.light.embed = { // the README on GitHub's white: the same gloom, fading to white at the edges
-  ...THEMES.light, key: "light-embed", glyphGround: true, edge: [255, 255, 255, 1], ground: [40, 46, 44],
+// The README on GitHub's white: no grey panel (it read as a smudge), just the ghosts as dark
+// smoke on white with the page showing through their faces, faint mist low down, and the graves
+// in dark glyphs, everything fading to white at the edges.
+THEMES.light.embed = {
+  ...THEMES.light, key: "light-embed", glyphGround: true,
+  page: [255, 255, 255], skyTop: null, sky: [236, 239, 238], edge: [255, 255, 255, 1],
+  fog: [150, 158, 156], mist: [150, 160, 158, 0.16], ground: [64, 70, 70], groundEdge: [140, 146, 146],
+  ghostLo: [134, 140, 140], ghostHi: [16, 20, 20], glow: [96, 104, 104], glowA: 0.24, blend: "source-over",
 };
 for (const t of [THEMES.dark, THEMES.light, THEMES.dark.embed, THEMES.light.embed]) {
   t.css = [];
