@@ -48,7 +48,7 @@
 
   nav { position: fixed; inset-inline: 0; top: 0; z-index: 30; display: flex; justify-content: center;
         gap: 32px; padding-top: 32px; font-size: 13px; }
-  nav a { color: inherit; text-decoration: none; opacity: .5; transition: opacity .15s; }
+  nav a { color: inherit; text-decoration: none; opacity: .62; transition: opacity .15s; }
   nav a:hover, nav a[aria-current] { opacity: 1; }
   nav button { margin: -16px; padding: 16px; border: 0; background: none; color: inherit;
                opacity: .5; cursor: pointer; transition: opacity .15s; }
@@ -59,14 +59,16 @@
   :root[data-theme="light"] nav button .sun { display: none; }
 
   /* a soft halo in the page colour keeps text readable when a ghost drifts behind it */
-  nav, .quote, .intro, .entries { text-shadow: 0 0 2px var(--background-color), 0 0 12px var(--background-color), 0 0 22px var(--background-color); }
+  nav, .quote, .intro, .entries { text-shadow: 0 0 2px var(--background-color), 0 0 10px var(--background-color); }
   main { position: relative; z-index: 20; height: 100%; pointer-events: none; }
   main :is(a, button, .cite) { pointer-events: auto; }
-  .view { position: absolute; inset: 0; display: flex; opacity: 0; visibility: hidden; transform: translateY(10px);
-          filter: blur(3px);
-          transition: opacity .45s ease, transform .45s ease, filter .45s ease, visibility 0s linear .45s; }
-  .view[data-active] { opacity: 1; visibility: visible; transform: none; filter: none;
-                       transition: opacity .55s ease .12s, transform .55s cubic-bezier(.2,.7,.2,1) .12s, filter .55s ease .12s; }
+  /* switching views: a quick fade and a small lift, opacity and transform only (no blur), so it
+     runs on the compositor and never drags */
+  .view { position: absolute; inset: 0; display: flex; opacity: 0; visibility: hidden; transform: translateY(6px);
+          will-change: opacity, transform;
+          transition: opacity .18s ease-in, transform .18s ease-in, visibility 0s linear .18s; }
+  .view[data-active] { opacity: 1; visibility: visible; transform: none;
+                       transition: opacity .28s ease-out .06s, transform .32s cubic-bezier(.2,.7,.2,1) .06s; }
   /* theme switch: the browser snapshots the old page and the new one grows out of the button */
   ::view-transition-old(root), ::view-transition-new(root) { mix-blend-mode: normal; }
   /* opacity only: it stays on the compositor, so the fade never stutters */
@@ -118,10 +120,11 @@
   @media (prefers-reduced-motion: reduce) { .cursor { animation: none } .card { transition: none } }
 
   .list { height: 100%; width: 100%; padding: 120px 24px 6rem; box-sizing: border-box; overflow-y: auto; pointer-events: auto; scrollbar-width: none; }
-  .entries { margin: 0; padding: 0; list-style: none; font-size: 15px; line-height: 1.7; }
-  .entries li { margin-bottom: 18px; }
+  .entries { margin: 0; padding: 0; list-style: none; font-size: 16px; line-height: 1.7; }
+  .entries li { margin-bottom: 20px; }
   .entries li::before { content: "•"; margin-right: .6em; color: var(--accent); }
-  .entries .desc { display: block; margin-left: 1.25em; font-size: 13px; opacity: .55; max-width: 40rem; }
+  .entries .ink { opacity: .92; }
+  .entries .desc { display: block; margin-left: 1.25em; font-size: 14px; line-height: 1.65; opacity: .8; max-width: 40rem; }
 
   @media (min-width: 1024px) {
     .hero, .list { padding-left: 12vw; padding-right: 12vw; }

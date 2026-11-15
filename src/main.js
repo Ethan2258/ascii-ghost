@@ -64,7 +64,7 @@ if (params.has("record")) {
       else a.removeAttribute("aria-current");
     }
     document.title = active === "realm" ? SITE_TITLE : `${SITE_TITLE} — ${active}`;
-    setTimeout(() => sky.measure(), 520); // after the cross-fade settles
+    setTimeout(() => sky.measure(), 360); // after the cross-fade settles
   }
   addEventListener("hashchange", route);
   addEventListener("resize", () => requestAnimationFrame(() => sky.measure()));
