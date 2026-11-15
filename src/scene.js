@@ -296,7 +296,7 @@ export function mount(canvas, opts = {}) {
       // temperament: how curious, how easily frightened, how restless, how much it keeps company
       cur: r(), shy: r(), rest: r(), soc: r(),
       face: (r() * 3) | 0, // terror, anger or sorrow
-      loll: (r() - 0.5) * 0.5, asym: (r() - 0.5) * 1.6, twitch: 0, // a head held crooked, uneven eyes
+      loll: (r() - 0.5) * 0.5, asym: (r() - 0.5) * 1.6, // a head held crooked, uneven eyes
       mood: "wander", moodT: 3 + r() * 6, hd2: r() * TAU, listen: 0, lsx: 0, lsy: 0, pvx: 0,
     };
   }
@@ -464,9 +464,9 @@ export function mount(canvas, opts = {}) {
       const sp = g.speed * (0.55 + 0.45 * Math.sin(time * 0.33 + g.ph));
       let tx = (Math.cos(g.hd) * 0.6 + Math.cos(fa) * 0.4) * sp;
       let ty = (Math.sin(g.hd) * 0.6 + Math.sin(fa) * 0.4) * sp * 0.75;
-      // sudden darts, then drifting again
-      if (CALM.has(g.mood) && g.mood !== "sink" && Math.random() < dt * (0.03 + 0.2 * g.rest) * (g.mood === "hover" ? 0.15 : 1)) {
-        const a = g.hd + (Math.random() - 0.5) * 2.4, p = 120 + Math.random() * 140;
+      // now and then it changes course with a soft push, then drifts again
+      if (CALM.has(g.mood) && g.mood !== "sink" && Math.random() < dt * (0.015 + 0.06 * g.rest) * (g.mood === "hover" ? 0.15 : 1)) {
+        const a = g.hd + (Math.random() - 0.5) * 1.6, p = 45 + Math.random() * 45;
         g.vx += Math.cos(a) * p; g.vy += Math.sin(a) * p * 0.7; g.hd = a;
         if (Math.random() < 0.5) g.flick = 0.35;
       }
@@ -576,8 +576,6 @@ export function mount(canvas, opts = {}) {
       if (g.blinkAt <= 0) { g.blink = 1; g.blinkAt = 4 + Math.random() * 7; }
       g.blink = Math.max(0, g.blink - dt * 5);
       if (Math.random() < dt * 0.015) g.flick = 0.8;
-      if (Math.random() < dt * 0.06) g.twitch = 1; // a sudden jerk of the head
-      g.twitch = Math.max(0, g.twitch - dt * 3.5);
       g.flick = Math.max(0, g.flick - dt);
       // fade in on arrival; dissolve when leaving, or simply drift off the page
       let life = smoothstep(0, g.fadeIn, g.age);
@@ -666,8 +664,8 @@ export function mount(canvas, opts = {}) {
       eye: Math.max(0.08, 1 - g.blink), lookX: g.lookX, lookY: g.lookY,
       face: K.face ? g.face : false, slim: K.slim, asym: g.asym,
     };
-    // the head lolls to one side, sways, and now and then jerks
-    const tilt = (g.htilt || 0) + g.loll + Math.sin(g.wave * 0.25 + g.ph) * 0.07 + g.twitch * 0.5 * Math.sin(t * 38), ct = Math.cos(tilt), st = Math.sin(tilt);
+    // the head lolls to one side and sways slowly
+    const tilt = (g.htilt || 0) + g.loll + Math.sin(g.wave * 0.25 + g.ph) * 0.07, ct = Math.cos(tilt), st = Math.sin(tilt);
     const depth = (0.45 + 0.55 * g.z) * g.vis * (K.alpha || 1);
     if (depth < 0.02) return;
     const tick = Math.floor(t * 18);
