@@ -9,6 +9,8 @@
 // own box, follows that box as it changes, and stops drawing while it is scrolled
 // out of sight. Ghosts keep clear of [data-sky-avoid] elements and fade, without
 // being pushed away, under the text of [data-sky-dim] ones. destroy() stops it.
+// leftTree: false leaves out the small tree at the left, for a page whose text
+// runs down that side.
 //   mount(canvas, { record: { width, height, frames, fps } })     deterministic seamless loop,
 //                                                                 drive it with frame(i)
 
@@ -170,7 +172,7 @@ export function mount(canvas, opts = {}) {
     branch(tx, hill(tx) + 4, -Math.PI / 2 - 0.12, S * 0.22, S * 0.035, 5);
     if (!embed) {
       const t2 = W * 0.06; // a smaller, bent tree on the other side
-      branch(t2, hill(t2) + 4, -Math.PI / 2 + 0.3, S * 0.13, S * 0.022, 4);
+      if (opts.leftTree !== false) branch(t2, hill(t2) + 4, -Math.PI / 2 + 0.3, S * 0.13, S * 0.022, 4);
       // a broken iron fence along part of the crest: leaning pickets and a sagging rail
       const f0 = W * 0.34, f1 = W * 0.62, step = S * 0.022;
       g.lineWidth = Math.max(1.5, cw * 0.35);
