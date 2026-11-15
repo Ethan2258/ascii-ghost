@@ -1,6 +1,0 @@
-{
-  "version": "0.0.1",
-  "configurations": [
-    { "name": "ghost", "runtimeExecutable": "python", "runtimeArgs": ["tools/serve.py", "8897"], "port": 8897 }
-  ]
-}
