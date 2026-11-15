@@ -362,7 +362,7 @@ export function mount(canvas, opts = {}) {
   function population(dt) {
     const max = clamp(Math.round((W * H) / 190000), 3, 7);
     const resting = time - ptr.lastMove > 0.8 && ptr.x > -1e4;
-    const want = resting ? max : Math.round(lerp(2, max, smoothstep(0.25, 0.75, valueNoise(time * 0.035, 3.7, seed)))); // a resting cursor fills the page
+    const want = resting ? Math.min(Math.max(max, 4), (ptr.cap || 3) + 2) : Math.round(lerp(2, max, smoothstep(0.25, 0.75, valueNoise(time * 0.035, 3.7, seed)))); // a resting cursor fills the page
     const alive = ghosts.filter((g) => !g.leaving).length;
     if (alive < want && Math.random() < dt * (resting ? 1.5 : 0.6)) {
       const roll = Math.random();
@@ -426,24 +426,32 @@ export function mount(canvas, opts = {}) {
     const idle = time - ptr.lastMove;
     ptr.light += ((idle < 3 && ptr.x > -1e4 ? 1 : 0) - ptr.light) * Math.min(1, dt * 2);
     population(dt);
-    // A cursor that rests draws them in: within a second every ghost on the page turns toward it
-    // and comes, up to six at a time, to gather in a ring around it.
+    // A cursor that rests draws them in, a few at a time: how many come this time is left to
+    // chance (two to six), the first one or two soon, more the longer it rests. Each comes from
+    // its own side to a place of its own, near or far, and the timid hang back before they come.
     if (idle > 0.8 && ptr.x > -1e4) {
-      const free = ghosts.filter((g) => g.K.face && !g.K.passer && !g.leaving && (CALM.has(g.mood) || g.mood === "investigate") && !(g.cool > 0));
-      const busy = ghosts.filter((g) => g.mood === "approach" || g.mood === "linger").length;
-      free.sort((a, b) => Math.hypot(a.x - ptr.x, a.y - ptr.y) - Math.hypot(b.x - ptr.x, b.y - ptr.y));
-      for (const g of free.slice(0, Math.max(0, 6 - busy))) {
-        // six places evenly round the ring; it takes the free one nearest to where it already is
-        const bearing = Math.atan2(g.y - ptr.y, g.x - ptr.x);
-        const taken = ghosts.filter((o) => o.mood === "approach" || o.mood === "linger").map((o) => o.slotN);
-        let best = -1, bd = 9;
-        for (let k = 0; k < 6; k++) {
-          if (taken.includes(k)) continue;
-          const a = k * TAU / 6 + 0.3, dd = Math.abs(Math.atan2(Math.sin(a - bearing), Math.cos(a - bearing)));
-          if (dd < bd) { bd = dd; best = k; }
+      if (ptr.restAt !== ptr.lastMove) { ptr.restAt = ptr.lastMove; ptr.cap = Math.random() < 0.12 ? 2 : 3 + Math.floor(Math.random() * 4); ptr.nextJoin = 0; } // usually three to six, now and then just two
+      const busy = ghosts.filter((g) => g.mood === "approach" || g.mood === "linger");
+      const allowed = Math.min(ptr.cap, 2 + Math.floor((idle - 0.8) / 1.5));
+      if (busy.length < allowed && idle >= ptr.nextJoin) {
+        const free = ghosts.filter((g) => g.K.face && !g.K.passer && !g.leaving && (CALM.has(g.mood) || g.mood === "investigate") && !(g.cool > 0));
+        free.sort((a, b) => (Math.hypot(a.x - ptr.x, a.y - ptr.y) * (1.6 - a.cur)) - (Math.hypot(b.x - ptr.x, b.y - ptr.y) * (1.6 - b.cur)));
+        const g = free[0];
+        if (g) {
+          // its own place: roughly on its side of the cursor, kept clear of the others', at its own distance
+          let ang = Math.atan2(g.y - ptr.y, g.x - ptr.x) + (Math.random() - 0.5) * 0.9;
+          for (let tries = 0; tries < 8; tries++) {
+            const clash = busy.some((o) => Math.abs(Math.atan2(Math.sin(o.slot - ang), Math.cos(o.slot - ang))) < 0.75);
+            if (!clash) break;
+            ang += (tries % 2 ? -1 : 1) * 0.5 * (tries + 1);
+          }
+          g.mood = "approach"; g.slot = ang;
+          g.slotR = (0.55 + 0.6 * Math.random()) * (1 + 0.5 * g.shy); // the timid stay further off
+          g.slotY = (Math.random() - 0.5) * 0.5;
+          g.slotDrift = (Math.random() - 0.5) * 0.18;
+          g.hesitate = 0.2 + 2.2 * g.shy * Math.random(); // it stares a moment before it comes
+          ptr.nextJoin = idle + 0.4 + Math.random() * 1.3;
         }
-        if (best < 0) break;
-        g.mood = "approach"; g.slotN = best; g.slot = best * TAU / 6 + 0.3;
       }
     }
     for (const g of ghosts) {
@@ -518,14 +526,16 @@ export function mount(canvas, opts = {}) {
         if (idle < 0.15 || ptr.x < -1e4) { g.mood = "retreat"; g.moodT = 2.0; g.cool = 2.5; } // the cursor moved away: it shies off
       }
       if (g.mood === "approach" || g.mood === "linger") {
-        // take a place in the ring around the cursor (its head level with it), and slowly circle
-        g.slot += dt * 0.07; // the whole ring turns slowly
-        const ring = r * 1.6 + S * 0.2;
-        const ox = ptr.x + Math.cos(g.slot) * ring, oy = ptr.y + Math.sin(g.slot) * ring * 0.62 - r * 0.6;
+        // its own place near the cursor, drifting a little; first it may just stare, then it comes
+        g.slot += dt * g.slotDrift;
+        const dist = (r * 1.4 + S * 0.16) * g.slotR;
+        const ox = ptr.x + Math.cos(g.slot) * dist, oy = ptr.y + Math.sin(g.slot) * dist * 0.7 - r * 0.5 + g.slotY * r;
         const ex = ox - g.x, ey = oy - g.y, ed = Math.hypot(ex, ey) || 1;
-        const want = g.mood === "approach" ? Math.min(150, 40 + ed * 1.3) : Math.min(40, ed * 1.6);
-        tx = tx * 0.1 + (ex / ed) * want; ty = ty * 0.1 + (ey / ed) * want;
-        if (g.mood === "approach" && ed < r * 1.1) { g.mood = "linger"; g.moodT = 7 + 8 * g.cur; }
+        g.hesitate = Math.max(0, (g.hesitate || 0) - dt);
+        const pace = 70 + 90 * g.cur; // the curious come fast, the timid slowly
+        const want = g.hesitate > 0 ? 0 : g.mood === "approach" ? Math.min(pace, 30 + ed * 1.2) : Math.min(30, ed * 1.4);
+        tx = tx * (g.hesitate > 0 ? 0.05 : 0.12) + (ex / ed) * want; ty = ty * (g.hesitate > 0 ? 0.05 : 0.12) + (ey / ed) * want;
+        if (g.mood === "approach" && ed < r * 1.1) { g.mood = "linger"; g.moodT = 5 + 10 * g.cur * Math.random() + 3 * Math.random(); }
         // it stays a good while, then drifts off, and is soon drawn back if the cursor is still there
         if (g.mood === "linger" && (g.moodT -= dt) <= 0) { g.mood = "retreat"; g.moodT = 2.2; g.cool = 4; }
       } else if (g.mood === "retreat") { // turns away and drifts off, a little fainter
@@ -541,7 +551,7 @@ export function mount(canvas, opts = {}) {
         const give = (g.mood === "approach" || g.mood === "linger") ? 0.55 : 0.8; // they keep apart round the ring
         if (od < room) { tx += (ox / od) * (room - od) * give; ty += (oy / od) * (room - od) * give; }
       }
-      const turn = g.mood === "approach" ? 2.2 : 0.7; // called, it turns at once
+      const turn = g.mood === "approach" ? 1.2 + 1.4 * g.cur : 0.7; // called, the curious turn at once
       g.vx += (tx - g.vx) * Math.min(1, dt * turn);
       g.vy += (ty - g.vy) * Math.min(1, dt * turn);
       g.x += g.vx * dt; g.y += g.vy * dt;
