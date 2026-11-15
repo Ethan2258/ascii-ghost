@@ -37,11 +37,11 @@ const THEMES = {
   // under a heavy vignette, pale fog lying on the ground, and the ghosts as dark shadow
   light: {
     key: "light",
-    page: [152, 160, 156], skyTop: [96, 106, 102], sky: [198, 206, 200], edge: [18, 24, 22, 0.66],
-    fog: [224, 232, 226], ground: [22, 27, 26], groundEdge: [74, 84, 80], noGroundFog: true,
-    // dark smoke wrapped in a pale, cold aura, so each one stands out of the grey
-    ghostLo: [64, 72, 70], ghostHi: [8, 11, 11], glow: [236, 244, 240], glowA: 0.54, blend: "source-over",
-    socket: [234, 242, 238], ripple: [24, 30, 30], mist: [236, 242, 238, 0.58], whisper: [36, 44, 42],
+    page: [184, 191, 189], skyTop: [118, 128, 127], sky: [226, 231, 228], edge: [26, 32, 31, 0.5],
+    fog: [236, 241, 238], ground: [26, 31, 31], groundEdge: [92, 102, 100], noGroundFog: true, smoothGround: true, mistAbove: true,
+    // dark smoke, the page glowing through its hollow face
+    ghostLo: [56, 64, 64], ghostHi: [8, 11, 11], glow: [78, 88, 88], glowA: 0.34, blend: "source-over", // a soft body of smoke under the glyphs
+    socket: [238, 243, 240], ripple: [24, 30, 30], mist: [242, 246, 244, 0.6], whisper: [40, 48, 47],
   },
 };
 // The README on GitHub's dark page: a blue-grey mist on the horizon that the graves and the tree
@@ -139,14 +139,30 @@ export function mount(canvas, opts = {}) {
   }
 
   /** Graves, crosses and a dead tree on a low rise, drawn once and read back per cell. */
+  const hill = (x) => horizon + Math.sin(x / W * 5.1 + 1.3) * S * 0.018 + Math.sin(x / W * 13.7) * S * 0.008;
+  let groundHi = null; // the same silhouette at full resolution, for themes that draw it smooth
+
   function buildGround() {
     const m = document.createElement("canvas");
     m.width = cols; m.height = rows;
     const g = m.getContext("2d");
     g.scale(1 / cw, 1 / ch);
+    paintGround(g);
+    groundHi = document.createElement("canvas");
+    groundHi.width = canvas.width; groundHi.height = canvas.height;
+    const gh = groundHi.getContext("2d");
+    gh.scale(dpr, dpr);
+    paintGround(gh);
+    const a = g.getImageData(0, 0, cols, rows).data;
+    ground = new Float32Array(cols * rows);
+    for (let k = 0; k < ground.length; k++) ground[k] = a[k * 4 + 3] / 255;
+    hillRow = new Int16Array(cols);
+    for (let i = 0; i < cols; i++) hillRow[i] = Math.floor(hill((i + 0.5) * cw) / ch);
+  }
+
+  function paintGround(g) {
     g.fillStyle = "#fff"; g.strokeStyle = "#fff"; g.lineCap = "round";
     const r = rng(seed + 5);
-    const hill = (x) => horizon + Math.sin(x / W * 5.1 + 1.3) * S * 0.018 + Math.sin(x / W * 13.7) * S * 0.008;
     g.beginPath(); g.moveTo(0, H);
     for (let x = 0; x <= W; x += 6) g.lineTo(x, hill(x));
     g.lineTo(W, H); g.closePath(); g.fill();
@@ -194,11 +210,6 @@ export function mount(canvas, opts = {}) {
       for (let x = f0; x <= f1; x += step) { const y = hill(x) - S * 0.034 + Math.sin(x / W * 40) * S * 0.004; x === f0 ? g.moveTo(x, y) : g.lineTo(x, y); }
       g.stroke();
     }
-    const a = g.getImageData(0, 0, cols, rows).data;
-    ground = new Float32Array(cols * rows);
-    for (let k = 0; k < ground.length; k++) ground[k] = a[k * 4 + 3] / 255;
-    hillRow = new Int16Array(cols);
-    for (let i = 0; i < cols; i++) hillRow[i] = Math.floor(hill((i + 0.5) * cw) / ch);
   }
 
   function font() { return `600 ${Math.round(ch * 0.8)}px "Geist Mono", ui-monospace, Consolas, Menlo, monospace`; }
@@ -250,6 +261,13 @@ export function mount(canvas, opts = {}) {
     sky.addColorStop(0, rgba(pal.sky, 0)); sky.addColorStop(1, rgba(pal.sky, 1));
     b.fillStyle = sky; b.fillRect(0, horizon - S * 0.55, W, S * 0.6);
     b.font = font(); b.textAlign = "center"; b.textBaseline = "middle";
+    if (pal.smoothGround && groundHi) {
+      const [tc, t] = mk();
+      t.setTransform(1, 0, 0, 1, 0, 0);
+      t.fillStyle = rgba(pal.ground); t.fillRect(0, 0, tc.width, tc.height);
+      t.globalCompositeOperation = "destination-in"; t.drawImage(groundHi, 0, 0);
+      b.save(); b.setTransform(1, 0, 0, 1, 0, 0); b.drawImage(tc, 0, 0); b.restore();
+    }
     for (let k = 0; k < ground.length; k++) {
       const gd = ground[k];
       if (gd < 0.15) continue;
@@ -262,8 +280,13 @@ export function mount(canvas, opts = {}) {
         b.fillText(edge ? (gd < 0.45 ? ":" : "%") : h < 0.7 ? "#" : "@", (i + 0.5) * cw, (j + 0.5) * ch); // solid, so the graves read
         continue;
       }
-      b.fillStyle = rgba(pal.ground, Math.min(1, gd * 1.3));
-      b.fillRect(i * cw - 0.3, j * ch - 0.3, cw + 0.6, ch + 0.6);
+      if (!pal.smoothGround) {
+        b.fillStyle = rgba(pal.ground, Math.min(1, gd * 1.3));
+        b.fillRect(i * cw - 0.3, j * ch - 0.3, cw + 0.6, ch + 0.6);
+      } else if (gd > 0.6 && j < hillRow[i]) { // the stones and the tree keep a faint grain of glyphs, cut into them
+        const h = hash3(i, j, 33);
+        if (h < 0.55) { b.fillStyle = rgba(pal.groundEdge, 0.22 + 0.12 * h); b.fillText(h < 0.2 ? "%" : h < 0.4 ? "#" : "=", (i + 0.5) * cw, (j + 0.5) * ch); }
+      }
       if (gd < 0.75) { b.fillStyle = rgba(pal.groundEdge, 0.7); b.fillText(gd < 0.45 ? "." : ":", (i + 0.5) * cw, (j + 0.5) * ch); continue; }
       // earth: a sparse scatter of glyphs, thicker near the crest, so the ground is not a flat slab
       const depthBelow = j - hillRow[i], h = hash3(i, j, 21);
@@ -945,7 +968,8 @@ export function mount(canvas, opts = {}) {
     {
       const fd = fogImg.data, fc = pal.mist;
       for (let gj = 0; gj < grows; gj++) {
-        const low = 0.12 + 0.88 * lowFog(gj * 2);
+        let low = 0.12 + 0.88 * lowFog(gj * 2);
+        if (pal.mistAbove) low *= 1 - smoothstep(horizon - ch, horizon + ch * 2, gj * 2 * ch);
         for (let gi = 0; gi < gcols; gi++) {
           const o = (gj * gcols + gi) * 4;
           fd[o] = fc[0]; fd[o + 1] = fc[1]; fd[o + 2] = fc[2];
