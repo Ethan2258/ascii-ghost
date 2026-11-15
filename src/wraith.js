@@ -13,7 +13,7 @@ const FACES = [
   [0.3, -0.12, 0.2, 0.11, 0.62, 0.4, 0.075, 0.21], // sorrow: drooping eyes, a long thin moan
 ];
 
-/** pose: { wave, gape, eye, lookX, lookY, reach, face (false, or 0..2), slim }
+/** pose: { wave, gape, eye, lookX, lookY, reach, face (false, or 0..2), slim, asym }
  *  Returns the density; `wraithAt.hole` is how much eye or mouth was cut out at that point. */
 export function wraithAt(p, x, y) {
   // head: a tall wisp, narrower toward the crown
@@ -40,17 +40,26 @@ export function wraithAt(p, x, y) {
   const before = d;
   let keep = 1;
 
-  for (let s = -1; s <= 1; s += 2) { // eyes
-    const ex = x - (s * F[0] + p.lookX * 0.08), ey = y - (F[1] + p.lookY * 0.06);
+  const A = p.asym || 0;
+  for (let s = -1; s <= 1; s += 2) { // eyes: hollow, uneven, and running
+    const big = 1.15 * (1 + 0.22 * A * s);
+    const cx = s * F[0] + p.lookX * 0.08, cy = F[1] + p.lookY * 0.06 + 0.05 * A * s;
+    const ex = x - cx, ey = y - cy;
     const a = s * F[4], ca = Math.cos(a), sa = Math.sin(a);
-    const u = (ex * ca + ey * sa) / F[2], v = (-ex * sa + ey * ca) / (F[3] * p.eye + 0.03);
+    const u = (ex * ca + ey * sa) / (F[2] * big), v = (-ex * sa + ey * ca) / (F[3] * big * p.eye + 0.03);
     const e = u * u + v * v;
     if (e < 1.6) keep *= smoothstep(0.6, 1.6, e);
+    // the hollow runs down the face, as if it were melting
+    const len = 0.55 + 0.25 * A * s, t = ey / len;
+    if (t > 0 && t < 1 && Math.abs(ex + 0.03 * Math.sin(ey * 9 + s)) < 0.05 * (1 - 0.6 * t)) keep *= 0.25 + 0.75 * t;
   }
-  // mouth: always a hollow, gaping wider in fright
-  const mx = (x - p.lookX * 0.05) / (F[6] * (1 + 0.35 * p.gape)), my = (y - F[5]) / (F[7] * (1 + 0.5 * p.gape));
+  // mouth: always a hollow, gaping wider in fright, and sagging downward
+  const mw = F[6] * 1.12 * (1 + 0.35 * p.gape), mh = F[7] * 1.2 * (1 + 0.5 * p.gape);
+  const mx = (x - p.lookX * 0.05) / mw, my = (y - F[5]) / mh;
   const m = mx * mx + my * my;
   if (m < 1.6) keep *= smoothstep(0.6, 1.6, m);
+  const mt = (y - F[5] - mh * 0.6) / 0.5;
+  if (mt > 0 && mt < 1 && Math.abs(x - p.lookX * 0.05) < mw * 0.45 * (1 - mt)) keep *= 0.3 + 0.7 * mt;
 
   d *= keep;
   // how much of a solid face was cut away here: a theme may paint these holes dark

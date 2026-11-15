@@ -275,6 +275,7 @@ export function mount(canvas, opts = {}) {
       // temperament: how curious, how easily frightened, how restless, how much it keeps company
       cur: r(), shy: r(), rest: r(), soc: r(),
       face: (r() * 3) | 0, // terror, anger or sorrow
+      loll: (r() - 0.5) * 0.5, asym: (r() - 0.5) * 1.6, twitch: 0, // a head held crooked, uneven eyes
       mood: "wander", moodT: 3 + r() * 6, hd2: r() * TAU, listen: 0, lsx: 0, lsy: 0, pvx: 0,
     };
   }
@@ -516,6 +517,8 @@ export function mount(canvas, opts = {}) {
       if (g.blinkAt <= 0) { g.blink = 1; g.blinkAt = 4 + Math.random() * 7; }
       g.blink = Math.max(0, g.blink - dt * 5);
       if (Math.random() < dt * 0.015) g.flick = 0.8;
+      if (Math.random() < dt * 0.06) g.twitch = 1; // a sudden jerk of the head
+      g.twitch = Math.max(0, g.twitch - dt * 3.5);
       g.flick = Math.max(0, g.flick - dt);
       // fade in on arrival; dissolve when leaving, or simply drift off the page
       let life = smoothstep(0, g.fadeIn, g.age);
@@ -567,7 +570,7 @@ export function mount(canvas, opts = {}) {
   // down, so it trails along the path just travelled and swings out on every turn.
   const SPINE = 12;
   function updateSpine(g, dt) {
-    const r = radius(g), seg = r * 0.42 * g.K.tail;
+    const r = radius(g), seg = r * 0.5 * g.K.tail;
     const bob = Math.sin(g.wave * 0.5 + g.ph2) * r * 0.16;
     const ht = g.htilt || 0;
     const nx = g.x - Math.sin(ht) * r * 0.95, ny = g.y + bob + Math.cos(ht) * r * 0.95; // the shoulders
@@ -594,9 +597,10 @@ export function mount(canvas, opts = {}) {
     const pose = {
       lean: 0, wave: g.wave, gape: g.gape, reach: g.reach,
       eye: Math.max(0.08, 1 - g.blink), lookX: g.lookX, lookY: g.lookY,
-      face: K.face ? g.face : false, slim: K.slim,
+      face: K.face ? g.face : false, slim: K.slim, asym: g.asym,
     };
-    const tilt = (g.htilt || 0) + Math.sin(g.wave * 0.25 + g.ph) * 0.05, ct = Math.cos(tilt), st = Math.sin(tilt);
+    // the head lolls to one side, sways, and now and then jerks
+    const tilt = (g.htilt || 0) + g.loll + Math.sin(g.wave * 0.25 + g.ph) * 0.07 + g.twitch * 0.5 * Math.sin(t * 38), ct = Math.cos(tilt), st = Math.sin(tilt);
     const depth = (0.45 + 0.55 * g.z) * g.vis * (K.alpha || 1);
     if (depth < 0.02) return;
     const tick = Math.floor(t * 18);
@@ -632,8 +636,8 @@ export function mount(canvas, opts = {}) {
           const side = (vx * qy - vy * qx) / Math.sqrt(ll); // signed distance across the shroud
           let wd = r * slim * (0.98 * Math.pow(1 - sN, 0.62) + 0.05);
           // the hem tears into strands that sway
-          const tat = smoothstep(0.5, 1, sN) * (0.5 - 0.5 * Math.cos(side / r * 6.5 + sN * 4 + g.wave * 0.75));
-          wd *= 1 - 0.55 * tat;
+          const tat = smoothstep(0.35, 1, sN) * (0.5 - 0.5 * Math.cos(side / r * 7.5 + sN * 5 + g.wave * 0.75));
+          wd *= 1 - 0.75 * tat;
           const v = smoothstep(wd * 1.25, wd * 0.4, q) * (0.82 - 0.42 * sN);
           if (v > body) { body = v; bs = sN; }
         }
@@ -805,11 +809,23 @@ export function mount(canvas, opts = {}) {
         for (const rr of range.getClientRects()) if (rr.width > 1 && rr.height > 1) dimCells(local(rr), 6, 3);
       }
     }
+    // Avoid and dim by the text actually on screen, line by line: an element's own box can be far
+    // wider than its words (a full-width nav), and a hidden view still has a box.
     for (const el of document.querySelectorAll("[data-sky-avoid]")) {
-      const r = local(el.getBoundingClientRect());
-      if (!r.width || !r.height) continue;
-      avoidRects.push(r);
-      dimCells(r, 8, 4);
+      if (el.checkVisibility ? !el.checkVisibility({ visibilityProperty: true, opacityProperty: true }) : getComputedStyle(el).visibility === "hidden") continue;
+      let l = Infinity, t0 = Infinity, rt = -Infinity, bt = -Infinity;
+      const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      for (let t; (t = walk.nextNode());) {
+        if (!t.nodeValue.trim()) continue;
+        range.selectNodeContents(t);
+        for (const rr of range.getClientRects()) {
+          if (rr.width <= 1 || rr.height <= 1) continue;
+          const r = local(rr);
+          dimCells(r, 8, 4);
+          l = Math.min(l, r.left); t0 = Math.min(t0, r.top); rt = Math.max(rt, r.right); bt = Math.max(bt, r.bottom);
+        }
+      }
+      if (rt > l) avoidRects.push({ left: l, right: rt, top: t0, bottom: bt, width: rt - l, height: bt - t0 });
     }
   }
 
