@@ -18,7 +18,7 @@ import { TAU, clamp, lerp, smoothstep, mixRgb, rgba, rng, hash3, valueNoise, fbm
 import { wraithAt } from "./wraith.js";
 
 const CHARS = " .:-=+*#%@~"; // 1..9 is the density ramp, 10 is fog
-const GL = 32, FL = 16; // ghost / fog colour levels
+const GL = 32, FL = 16, SPINE = 12; // ghost / fog colour levels, shroud links
 
 // Dark: a black night, pale glowing ghosts. Light: an overcast grey dusk, white ghosts with
 // dark hollow faces. Each has a variant for the README recording, drawn on GitHub's own page
@@ -28,27 +28,27 @@ const THEMES = {
   // low on the horizon, and the ghosts' cold phosphor light
   dark: {
     key: "dark",
-    page: [7, 8, 8], skyTop: [4, 5, 5], edge: [0, 0, 0, 0.9], sky: [38, 50, 45],
-    fog: [104, 122, 114], ground: [3, 4, 4], groundEdge: [62, 76, 70],
-    ghostLo: [62, 66, 68], ghostHi: [226, 230, 231], glow: [142, 150, 150], glowA: 0.46, blend: "lighter",
-    socket: null, ripple: [170, 196, 186], flashC: [178, 198, 194], mist: [96, 112, 106, 0.42], whisper: [150, 168, 160],
+    page: [6, 8, 8], skyTop: [3, 4, 4], edge: [0, 0, 0, 0.92], sky: [34, 48, 43],
+    fog: [108, 128, 118], ground: [3, 4, 4], groundEdge: [76, 94, 86],
+    ghostLo: [66, 76, 74], ghostHi: [232, 240, 238], glow: [138, 154, 148], glowA: 0.46, blend: "lighter",
+    socket: [4, 6, 6], ripple: [170, 196, 186], flashC: [178, 198, 194], mist: [90, 112, 104, 0.46], whisper: [150, 168, 160],
   },
   // light: a dead, overcast day; low grey-green light, darker overhead, near-black graves
   // under a heavy vignette, pale fog lying on the ground, and the ghosts as dark shadow
   light: {
     key: "light",
-    page: [160, 167, 163], skyTop: [108, 116, 113], sky: [204, 210, 204], edge: [22, 28, 26, 0.62],
-    fog: [222, 230, 224], ground: [26, 31, 30], groundEdge: [78, 88, 84], noGroundFog: true,
+    page: [152, 160, 156], skyTop: [96, 106, 102], sky: [198, 206, 200], edge: [18, 24, 22, 0.66],
+    fog: [224, 232, 226], ground: [22, 27, 26], groundEdge: [74, 84, 80], noGroundFog: true,
     // dark smoke wrapped in a pale, cold aura, so each one stands out of the grey
-    ghostLo: [118, 126, 122], ghostHi: [10, 13, 13], glow: [234, 242, 237], glowA: 0.5, blend: "source-over",
-    socket: null, ripple: [26, 32, 32], mist: [236, 242, 238, 0.6], whisper: [40, 48, 46],
+    ghostLo: [64, 72, 70], ghostHi: [8, 11, 11], glow: [236, 244, 240], glowA: 0.54, blend: "source-over",
+    socket: [234, 242, 238], ripple: [24, 30, 30], mist: [236, 242, 238, 0.58], whisper: [36, 44, 42],
   },
 };
 // The README on GitHub's dark page: a blue-grey mist on the horizon that the graves and the tree
 // stand out against (picked out with a pale rim), fading into the page colour at every edge.
 THEMES.dark.embed = {
   ...THEMES.dark, key: "dark-embed", page: [13, 17, 23], skyTop: null, edge: [13, 17, 23, 1], sky: [34, 42, 52],
-  mist: [70, 84, 96, 0.36], ground: [5, 7, 10], groundEdge: [104, 116, 128],
+  mist: [70, 84, 96, 0.36], ground: [5, 7, 10], groundEdge: [104, 116, 128], socket: [10, 14, 19],
 };
 // The README on GitHub's white: no grey panel (it read as a smudge), just the ghosts as dark
 // smoke on white with the page showing through their faces, faint mist low down, and the graves
@@ -57,13 +57,16 @@ THEMES.light.embed = {
   ...THEMES.light, key: "light-embed", glyphGround: true,
   page: [255, 255, 255], skyTop: null, sky: [236, 239, 238], edge: [255, 255, 255, 1],
   fog: [150, 158, 156], mist: [150, 160, 158, 0.16], ground: [64, 70, 70], groundEdge: [140, 146, 146],
-  ghostLo: [134, 140, 140], ghostHi: [16, 20, 20], glow: [96, 104, 104], glowA: 0.24, blend: "source-over",
+  ghostLo: [108, 116, 116], ghostHi: [12, 16, 16], glow: [96, 104, 104], glowA: 0.24, blend: "source-over",
+  socket: [252, 254, 253],
 };
 for (const t of [THEMES.dark, THEMES.light, THEMES.dark.embed, THEMES.light.embed]) {
   t.css = [];
+  const darkSmoke = t.ghostHi[0] < t.ghostLo[0];
   for (let i = 0; i < GL; i++) {
     const k = i / (GL - 1);
-    t.css.push(rgba(mixRgb(t.ghostLo, t.ghostHi, Math.pow(k, 0.75)), 0.18 + 0.82 * k));
+    const alpha = darkSmoke ? 0.28 + 0.72 * Math.pow(k, 0.7) : 0.18 + 0.82 * k;
+    t.css.push(rgba(mixRgb(t.ghostLo, t.ghostHi, Math.pow(k, 0.75)), alpha));
   }
   for (let i = 0; i < FL; i++) t.css.push(rgba(t.fog, 0.04 + (i / (FL - 1)) * 0.5));
   t.css.push(t.socket ? rgba(t.socket, 0.92) : "rgba(0,0,0,0)");
@@ -94,7 +97,7 @@ export function mount(canvas, opts = {}) {
   let time = 0, flash = 0, nextFlash = 20 + Math.random() * 20;
   let caches = {};
   const fogC = document.createElement("canvas"); // one pixel per fog node, scaled up smooth
-  const fctx = fogC.getContext("2d", { willReadFrequently: true }); // a CPU canvas: putImageData every frame stays cheap
+  const fctx = fogC.getContext("2d", { willReadFrequently: true }); // CPU canvas: putImageData every frame is ~0.1 ms here vs ~9 ms on a GPU canvas
   let fogImg = null;
   const glowC = document.createElement("canvas");
   const gctx = glowC.getContext("2d", { willReadFrequently: true });
@@ -126,7 +129,10 @@ export function mount(canvas, opts = {}) {
 
     if (rec) ghosts = recordCast();
     else if (!ghosts.length) {
-      for (let i = 0; i < 2; i++) { const g = makeGhost(i ? "wisp" : "wraith", Math.random); g.fadeIn = 2.5; ghosts.push(g); }
+      ghosts.push(spawnGhost("emerge", Math.random, "wraith"));
+      ghosts.push(spawnGhost("materialize", Math.random, "wisp"));
+      const bg = makeGhost("shade", Math.random); bg.age = 3; bg.fadeIn = 1.2; ghosts.push(bg);
+      ghosts.push(spawnGhost("side", Math.random, "wraith"));
     }
     measure();
   }
@@ -220,7 +226,7 @@ export function mount(canvas, opts = {}) {
     x.restore();
   }
 
-  /** Paint both themes' static layers while the page is idle, so switching theme never stalls. */
+  /** Paint both themes' static layers while the page is idle, so the first theme switch never stalls. */
   function prewarm() {
     if (embed) return;
     const idle = window.requestIdleCallback || ((f) => setTimeout(f, 200));
@@ -302,24 +308,19 @@ export function mount(canvas, opts = {}) {
       ph: r() * TAU, ph2: r() * TAU, ph3: r(),
       lean: 0, tilt: 0, wave: r() * 10, startle: 0, blink: 0, blinkAt: 3 + r() * 5, gape: 0.2,
       lookX: 0, lookY: 0, reach: 0, vis: 0, flick: 0, glitch: 0,
-      age: 0, life: 14 + r() * 30, leaving: false, gone: false, out: 0, fadeIn: 1.5 + r() * 2,
+      age: 0, life: 12 + r() * 18, leaving: false, gone: false, out: 0, fadeIn: 1.5 + r() * 2,
       // temperament: how curious, how easily frightened, how restless, how much it keeps company
       cur: r(), shy: r(), rest: r(), soc: r(),
       face: (r() * 3) | 0, // terror, anger or sorrow
       loll: (r() - 0.5) * 0.5, asym: (r() - 0.5) * 1.6, // a head held crooked, uneven eyes
       mood: "wander", moodT: 3 + r() * 6, hd2: r() * TAU, listen: 0, lsx: 0, lsy: 0, pvx: 0,
+      // build: no two alike -- a taller or rounder hood, a fuller or leaner shroud, a ragged or clean hem
+      hood: 0.02 + r() * 0.1, girth: 0.86 + r() * 0.28, tatter: 0.45 + r() * 0.55, droop: 0.45 + r() * 0.3,
+      stretch: 0, flare: 0, curl: 0,
     };
   }
 
   const radius = (g) => clamp(S * (0.055 + 0.03 * g.z), 22, 72) * g.K.size * (embed ? 1.45 : rec ? 1.15 : 1);
-
-  /** Where the shroud trails: away from the motion, and down when still. */
-  function trailTilt(g, vx, vy) {
-    const sp = Math.hypot(vx, vy);
-    const k = clamp(sp / 55, 0, 1.6) * g.K.follow;
-    const dx = sp ? -vx / sp * k : 0, dy = (sp ? -vy / sp * k : 0) + 1;
-    return clamp(Math.atan2(-dx, dy), -g.K.maxTilt, g.K.maxTilt);
-  }
 
   // --------------------------------------------------------------- motion
 
@@ -355,7 +356,6 @@ export function mount(canvas, opts = {}) {
       vx = W * 0.05 * w * Math.cos(w * t + g.ph); vy = H * 0.04 * w * Math.cos(w * t + g.ph2);
     }
     g.x = x; g.y = y; g.vx = vx; g.vy = vy;
-    g.tilt = trailTilt(g, vx, vy);
     g.lean = clamp(vx / 40, -1, 1) * 0.3;
     g.wave = TAU * 4 * t / loopT + g.ph;
     const sp = Math.hypot(vx, vy) || 1;
@@ -368,37 +368,54 @@ export function mount(canvas, opts = {}) {
     g.vis = 1;
   }
 
+  function spawnGhost(how, rfn = Math.random, kindOverride = null) {
+    const roll = rfn();
+    const kind = kindOverride || (roll < 0.44 ? "wraith" : roll < 0.82 ? "wisp" : roll < 0.94 ? "shade" : "passer");
+    const g = makeGhost(kind, rfn);
+    const r = radius(g);
+    const left = ghosts.filter((o) => o.x < W / 2).length, right = ghosts.length - left;
+    const side = left === right ? (rfn() < 0.5 ? -1 : 1) : left < right ? -1 : 1;
+    const mode = g.K.passer ? "side" : how;
+    if (mode === "emerge") { // climbs straight out of a grave on the horizon
+      g.x = W * (0.08 + rfn() * 0.82);
+      const hi = clamp(Math.floor(g.x / cw), 0, cols - 1);
+      const hy = hillRow ? hillRow[hi] * ch : horizon;
+      g.y = hy + r * 0.25;
+      g.vx = 0; g.vy = -g.speed * 1.4; g.hd = -Math.PI / 2;
+      g.fadeIn = 0.35;
+      g.mood = "emerge"; g.moodT = 2.8 + rfn() * 1.2;
+      g.reach = 0.45;
+    } else if (mode === "materialize") { // condenses out of thin air in mid-sky
+      g.x = W * (0.12 + rfn() * 0.76);
+      g.y = H * (0.16 + rfn() * 0.44);
+      g.vx = 0; g.vy = -6; g.hd = -Math.PI / 2;
+      g.fadeIn = 1.4;
+      g.mood = "materialize"; g.moodT = 2.2;
+      const seg = r * 0.52 * g.K.tail;
+      g.spine = [];
+      for (let i = 0; i < SPINE; i++) g.spine.push([g.x, g.y + r * 0.48 + i * seg]);
+    } else { // sweeps in from the side
+      g.x = side < 0 ? -r * 2 : W + r * 2;
+      g.y = H * (0.1 + rfn() * 0.55);
+      g.vx = -side * g.speed * 1.5;
+      g.hd = side < 0 ? 0 : Math.PI;
+      g.fadeIn = 0.4;
+    }
+    return g;
+  }
+
   /** Live: how many there are drifts over time; they come and go on their own. */
   function population(dt) {
     const max = clamp(Math.round((W * H) / 190000), 3, 7);
-    const resting = time - ptr.lastMove > 0.8 && ptr.x > -1e4;
+    const resting = time - ptr.lastMove > 0.6 && ptr.x > -1e4;
     const want = resting ? Math.min(Math.max(max, 4), (ptr.cap || 3) + 2) : Math.round(lerp(2, max, smoothstep(0.25, 0.75, valueNoise(time * 0.035, 3.7, seed)))); // a resting cursor fills the page
     const alive = ghosts.filter((g) => !g.leaving).length;
-    if (alive < want && Math.random() < dt * (resting ? 1.5 : 0.6)) {
-      const roll = Math.random();
-      const g = makeGhost(roll < 0.42 ? "wraith" : roll < 0.8 ? "wisp" : roll < 0.93 ? "shade" : "passer", Math.random);
-      // They come from every side: in from the left or right (whichever half of the page is
-      // emptier), down out of the dark above, up out of a grave, or simply out of thin air.
-      const r = radius(g);
-      const left = ghosts.filter((o) => o.x < W / 2).length, right = ghosts.length - left;
-      const side = left === right ? (Math.random() < 0.5 ? -1 : 1) : left < right ? -1 : 1;
-      const how = g.K.passer ? 0 : Math.random();
-      if (how < 0.34) { // from the side
-        g.x = side < 0 ? -r * 2 : W + r * 2; g.y = H * (0.1 + Math.random() * 0.55);
-        g.vx = -side * g.speed * 1.5; g.hd = side < 0 ? 0 : Math.PI; g.fadeIn = 0.4;
-      } else if (how < 0.52) { // from above
-        g.x = W * (side < 0 ? 0.08 + Math.random() * 0.42 : 0.5 + Math.random() * 0.42); g.y = -r * 3;
-        g.vy = g.speed * 1.5; g.hd = Math.PI / 2; g.fadeIn = 0.4;
-      } else if (how < 0.78) { // rising out of the ground
-        g.x = W * (side < 0 ? 0.08 + Math.random() * 0.42 : 0.5 + Math.random() * 0.42); g.y = horizon + r * 1.5;
-        g.vy = -g.speed * 1.6; g.hd = -Math.PI / 2; g.fadeIn = 0.4;
-        g.mood = "sink"; g.phase = "up"; g.moodT = 12; // it keeps rising until it is clear of the graves
-      } else { // out of thin air, on the emptier side
-        g.x = W * (side < 0 ? 0.08 + Math.random() * 0.42 : 0.5 + Math.random() * 0.42);
-      }
-      ghosts.push(g);
+    if (alive < want && Math.random() < dt * (resting ? 1.5 : 0.75)) {
+      const p = Math.random();
+      const how = p < 0.45 ? "emerge" : p < 0.85 ? "materialize" : "side"; // out of a grave, out of the mist, or in from the side: never dropping from the sky
+      ghosts.push(spawnGhost(how, Math.random));
     }
-    if (alive > want && Math.random() < dt * 0.2) {
+    if (alive > want && Math.random() < dt * 0.25) {
       const c = ghosts.filter((g) => !g.leaving);
       c[(Math.random() * c.length) | 0].leaving = true;
     }
@@ -406,7 +423,7 @@ export function mount(canvas, opts = {}) {
     ghosts.sort((a, b) => a.z - b.z);
   }
 
-  const CALM = new Set(["wander", "drift", "hover", "follow", "circle", "sink"]);
+  const CALM = new Set(["wander", "drift", "hover", "follow", "circle", "sink", "wail"]);
 
   /** A new mood when the old one runs out, weighted by temperament. */
   function pickMood(g, r) {
@@ -414,13 +431,14 @@ export function mount(canvas, opts = {}) {
     const w = {
       wander: 3, drift: 2, hover: 0.4 + 2.2 * (1 - g.rest), circle: 1,
       follow: others.length ? 2.6 * g.soc : 0, sink: g.K.face ? 1 : 0,
+      wail: g.K.face && !embed ? 0.35 + 0.5 * (1 - g.shy) : 0, // rare: it stops, rises and screams without a sound
     };
     let roll = Math.random() * Object.values(w).reduce((a, b) => a + b, 0);
     let m = "wander";
     for (const [k, v] of Object.entries(w)) { if ((roll -= v) <= 0) { m = k; break; } }
     g.mood = m;
     g.moodT = { wander: 5 + Math.random() * 6, drift: 4 + Math.random() * 5, hover: 3 + Math.random() * 4,
-      circle: 6 + Math.random() * 5, follow: 6 + Math.random() * 7, sink: 12 }[m];
+      circle: 6 + Math.random() * 5, follow: 6 + Math.random() * 7, sink: 12, wail: 2.6 + Math.random() * 1.4 }[m];
     if (m === "follow") { // keep company with the nearest one
       others.sort((a, b) => Math.hypot(a.x - g.x, a.y - g.y) - Math.hypot(b.x - g.x, b.y - g.y));
       g.leader = others[0]; g.side = Math.random() < 0.5 ? -1 : 1;
@@ -439,10 +457,10 @@ export function mount(canvas, opts = {}) {
     // A cursor that rests draws them in, a few at a time: how many come this time is left to
     // chance (two to six), the first one or two soon, more the longer it rests. Each comes from
     // its own side to a place of its own, near or far, and the timid hang back before they come.
-    if (idle > 0.8 && ptr.x > -1e4) {
+    if (idle > 0.6 && ptr.x > -1e4) {
       if (ptr.restAt !== ptr.lastMove) { ptr.restAt = ptr.lastMove; ptr.cap = Math.random() < 0.12 ? 2 : 3 + Math.floor(Math.random() * 4); ptr.nextJoin = 0; } // usually three to six, now and then just two
       const busy = ghosts.filter((g) => g.mood === "approach" || g.mood === "linger");
-      const allowed = Math.min(ptr.cap, 2 + Math.floor((idle - 0.8) / 1.5));
+      const allowed = Math.min(ptr.cap, 2 + Math.floor((idle - 0.6) / 1.3));
       if (busy.length < allowed && idle >= ptr.nextJoin) {
         const free = ghosts.filter((g) => g.K.face && !g.K.passer && !g.leaving && (CALM.has(g.mood) || g.mood === "investigate") && !(g.cool > 0));
         free.sort((a, b) => (Math.hypot(a.x - ptr.x, a.y - ptr.y) * (1.6 - a.cur)) - (Math.hypot(b.x - ptr.x, b.y - ptr.y) * (1.6 - b.cur)));
@@ -456,11 +474,11 @@ export function mount(canvas, opts = {}) {
             ang += (tries % 2 ? -1 : 1) * 0.5 * (tries + 1);
           }
           g.mood = "approach"; g.slot = ang;
-          g.slotR = (0.55 + 0.6 * Math.random()) * (1 + 0.5 * g.shy); // the timid stay further off
+          g.slotR = (0.45 + 0.55 * Math.random()) * (1 + 0.5 * g.shy); // the shy keep further back
           g.slotY = (Math.random() - 0.5) * 0.5;
           g.slotDrift = (Math.random() - 0.5) * 0.18;
-          g.hesitate = 0.2 + 2.2 * g.shy * Math.random(); // it stares a moment before it comes
-          ptr.nextJoin = idle + 0.4 + Math.random() * 1.3;
+          g.hesitate = 0.15 + 1.6 * g.shy * Math.random(); // the shy ones watch a while before drifting in
+          ptr.nextJoin = idle + 0.35 + Math.random() * 1.1;
         }
       }
     }
@@ -474,11 +492,20 @@ export function mount(canvas, opts = {}) {
       const sp = g.speed * (0.55 + 0.45 * Math.sin(time * 0.33 + g.ph));
       let tx = (Math.cos(g.hd) * 0.6 + Math.cos(fa) * 0.4) * sp;
       let ty = (Math.sin(g.hd) * 0.6 + Math.sin(fa) * 0.4) * sp * 0.75;
-      // now and then a short dart onto a new course, then it drifts again
-      if (CALM.has(g.mood) && g.mood !== "sink" && Math.random() < dt * (0.02 + 0.11 * g.rest) * (g.mood === "hover" ? 0.15 : 1)) {
-        const a = g.hd + (Math.random() - 0.5) * 1.9, p = 80 + Math.random() * 70;
-        g.vx += Math.cos(a) * p; g.vy += Math.sin(a) * p * 0.7; g.hd = a;
-        if (Math.random() < 0.5) g.flick = 0.35;
+      // now and then a short smooth surge onto a new course, then it drifts again
+      if (CALM.has(g.mood) && g.mood !== "sink" && g.mood !== "wail" && !(g.surgeT > 0) && Math.random() < dt * (0.025 + 0.09 * g.rest) * (g.mood === "hover" ? 0.15 : 1)) {
+        g.surgeA = g.hd + (Math.random() - 0.5) * 1.4;
+        g.surgeD = 1.0 + Math.random() * 0.6;
+        g.surgeT = g.surgeD;
+        g.surgeP = 32 + Math.random() * 30;
+        g.hd = g.surgeA;
+        if (Math.random() < 0.4) g.flick = 0.35;
+      }
+      if (g.surgeT > 0) {
+        g.surgeT = Math.max(0, g.surgeT - dt);
+        const sBell = Math.sin((1 - g.surgeT / g.surgeD) * Math.PI);
+        tx += Math.cos(g.surgeA) * g.surgeP * sBell;
+        ty += Math.sin(g.surgeA) * g.surgeP * 0.7 * sBell;
       }
       const seek = (x, y, v) => {
         const ex = x - g.x, ey = y - g.y, ed = Math.hypot(ex, ey) || 1, s2 = Math.min(v, ed * 0.9);
@@ -502,12 +529,22 @@ export function mount(canvas, opts = {}) {
         } else if (g.mood === "circle") {
           g.ca += g.cdir * dt * (0.3 + 0.35 * g.rest);
           seek(g.cx + Math.cos(g.ca) * r * 2.4, g.cy + Math.sin(g.ca) * r * 1.0, sp * 1.5);
+        } else if (g.mood === "wail") { // stops dead, draws itself up tall, and wails
+          tx *= 0.08; ty = ty * 0.08 - 10 * Math.sin(Math.PI * clamp(g.moodT / 2.6, 0, 1));
         } else if (g.mood === "sink") {
           if (g.phase === "down") { if (seek(g.x + Math.sin(time * 0.3 + g.ph) * r, horizon + r * 0.6, sp * 0.9) < r * 0.5) g.phase = "up"; }
           else if (seek(g.x, H * (0.22 + 0.2 * g.ph3), sp * 0.8) < r) g.moodT = 0;
         }
       } else if (g.mood === "investigate") { // heard something: goes to have a look
         if (seek(g.invX, g.invY, sp * 1.5) < r * 1.2 || (g.moodT -= dt) <= 0) { g.mood = "hover"; g.moodT = 2.5 + Math.random() * 2; }
+      } else if (g.mood === "emerge") { // climbing out of the earth
+        tx = Math.sin(time * 2.2 + g.ph) * 16;
+        ty = -g.speed * (1.15 + 0.6 * (g.moodT / 3.5));
+        if ((g.moodT -= dt) <= 0 || g.y < H * 0.52) pickMood(g, r);
+      } else if (g.mood === "materialize") { // condensing out of swirling sky mist
+        tx = Math.sin(time * 1.8 + g.ph) * 8;
+        ty = -6 + Math.cos(time * 1.4 + g.ph2) * 6;
+        if ((g.moodT -= dt) <= 0) pickMood(g, r);
       }
       if (g.K.passer) { // straight across, then gone
         tx = Math.sign(g.vx || 1) * g.speed; ty *= 0.3;
@@ -518,7 +555,7 @@ export function mount(canvas, opts = {}) {
         const l = b.left - r * 1.3, rt = b.right + r * 1.3, tp = b.top - r * 3.2, bt = b.bottom + r * 1.1;
         if (g.x > l && g.x < rt && g.y > tp && g.y < bt) {
           const pushX = g.x - l < rt - g.x ? -(g.x - l) : rt - g.x, pushY = g.y - tp < bt - g.y ? -(g.y - tp) : bt - g.y;
-          const soft = g.mood === "approach" || g.mood === "linger" ? 0.35 : 1.5;
+          const soft = g.mood === "approach" || g.mood === "linger" ? 0.12 : 1.5;
           if (Math.abs(pushX) < Math.abs(pushY)) tx += pushX * soft; else ty += pushY * soft;
         }
       }
@@ -527,7 +564,12 @@ export function mount(canvas, opts = {}) {
         if (g.x < m) tx += (m - g.x) * 1.2;
         if (g.x > W - m) tx -= (g.x - (W - m)) * 1.2;
         if (g.y < r * 0.8) ty += (r * 0.8 - g.y) * 0.4;
-        if (g.mood !== "sink" && g.y > horizon - r * 0.6) ty -= (g.y - (horizon - r * 0.6)) * 0.4;
+        if (g.mood !== "sink" && g.mood !== "emerge" && g.y > horizon - r * 0.6) ty -= (g.y - (horizon - r * 0.6)) * 0.4;
+      }
+      if (g.leaving && !g.K.passer) { // sink back into a grave or dissolve upward into ash
+        if (!g.leaveHow) g.leaveHow = Math.random() < 0.5 ? "sink" : "dissolve";
+        if (g.leaveHow === "sink") { tx *= 0.2; ty = g.speed * 1.1; }
+        else { tx *= 0.15; ty = -18; }
       }
       // curiosity: drawn to a cursor that rests, it comes close, lingers, then turns and goes
       const dx = ptr.x - g.x, dy = ptr.y - g.y, d = Math.hypot(dx, dy);
@@ -538,14 +580,14 @@ export function mount(canvas, opts = {}) {
       if (g.mood === "approach" || g.mood === "linger") {
         // its own place near the cursor, drifting a little; first it may just stare, then it comes
         g.slot += dt * g.slotDrift;
-        const dist = (r * 1.4 + S * 0.16) * g.slotR;
+        const dist = r * 1.15 + S * (0.045 + 0.065 * g.slotR);
         const ox = ptr.x + Math.cos(g.slot) * dist, oy = ptr.y + Math.sin(g.slot) * dist * 0.7 - r * 0.5 + g.slotY * r;
         const ex = ox - g.x, ey = oy - g.y, ed = Math.hypot(ex, ey) || 1;
         g.hesitate = Math.max(0, (g.hesitate || 0) - dt);
-        const pace = 70 + 90 * g.cur; // the curious come fast, the timid slowly
+        const pace = 95 + 110 * g.cur; // the curious come fast, the timid slowly
         const want = g.hesitate > 0 ? 0 : g.mood === "approach" ? Math.min(pace, 30 + ed * 1.2) : Math.min(30, ed * 1.4);
         tx = tx * (g.hesitate > 0 ? 0.05 : 0.12) + (ex / ed) * want; ty = ty * (g.hesitate > 0 ? 0.05 : 0.12) + (ey / ed) * want;
-        if (g.mood === "approach" && ed < r * 1.1) { g.mood = "linger"; g.moodT = 5 + 10 * g.cur * Math.random() + 3 * Math.random(); }
+        if (g.mood === "approach" && ed < r * 1.1) { g.mood = "linger"; g.moodT = 8 + 12 * g.cur * Math.random() + 4 * Math.random(); }
         // it stays a good while, then drifts off, and is soon drawn back if the cursor is still there
         if (g.mood === "linger" && (g.moodT -= dt) <= 0) { g.mood = "retreat"; g.moodT = 2.2; g.cool = 4; }
       } else if (g.mood === "retreat") { // turns away and drifts off, a little fainter
@@ -554,7 +596,9 @@ export function mount(canvas, opts = {}) {
         if ((g.moodT -= dt) <= 0) g.mood = "wander";
       }
       const near = g.mood === "approach" || g.mood === "linger";
-      g.reach += ((g.mood === "linger" ? 1 : near && d < r * 4 ? 0.5 : 0) - g.reach) * Math.min(1, dt * 1.8);
+      const wailing = g.mood === "wail" ? Math.sin(Math.PI * clamp(1 - g.moodT / 2.8, 0, 1)) : 0;
+      const wantReach = Math.max(wailing * 0.75, g.mood === "linger" ? 1 : g.mood === "emerge" ? 0.5 * clamp(g.moodT / 2.5, 0, 1) : near && d < r * 4.5 ? 0.7 : 0);
+      g.reach += (wantReach - g.reach) * Math.min(1, dt * 1.8);
       for (const o of ghosts) {
         if (o === g) continue;
         const ox = g.x - o.x, oy = g.y - o.y, od = Math.hypot(ox, oy) || 1, room = (r + radius(o)) * 1.6;
@@ -565,23 +609,30 @@ export function mount(canvas, opts = {}) {
       g.vx += (tx - g.vx) * Math.min(1, dt * turn);
       g.vy += (ty - g.vy) * Math.min(1, dt * turn);
       g.x += g.vx * dt; g.y += g.vy * dt;
-      // the shroud swings round to trail behind, with a little lag
-      const target = trailTilt(g, g.vx, g.vy);
-      let da = target - g.tilt; da = Math.atan2(Math.sin(da), Math.cos(da));
-      g.tilt += da * Math.min(1, dt * 2.2);
       const ax = (g.vx - g.pvx) / Math.max(dt, 1e-3); g.pvx = g.vx;
       g.lean += (clamp(g.vx / 40, -1, 1) * 0.3 - clamp(ax / 260, -0.45, 0.45) - g.lean) * Math.min(1, dt * 2.5);
+      // body language: drawn out long when it moves fast or wails, squashed when it recoils; the
+      // shroud flares when it wails or lingers, pulls in tight when frightened; it curls when idle
+      const spd = Math.hypot(g.vx, g.vy);
+      const wantStretch = clamp(spd / 160, 0, 0.45) + wailing * 0.4 - g.startle * 0.35;
+      g.stretch += (wantStretch - g.stretch) * Math.min(1, dt * 4);
+      const wantFlare = wailing * 0.35 + (g.mood === "linger" ? 0.12 : 0) - g.startle * 0.3 + (g.mood === "retreat" ? -0.1 : 0);
+      g.flare += (wantFlare - g.flare) * Math.min(1, dt * 3);
+      const wantCurl = g.mood === "hover" || g.mood === "linger" ? 1 : g.mood === "circle" ? 0.6 : 0.2;
+      g.curl += (wantCurl - g.curl) * Math.min(1, dt * 1.2);
       g.startle *= Math.exp(-dt * 0.9);
       g.scatter = (g.scatter || 0) * Math.exp(-dt * 0.7);
       g.wave += dt * (1.6 + g.startle * 5 + Math.hypot(g.vx, g.vy) * 0.012);
       let lx = g.vx, ly = g.vy * 0.3 + 4, ll = Math.hypot(lx, ly) || 1;
       g.listen = Math.max(0, g.listen - dt);
       if (g.listen > 0) { lx = g.lsx - g.x; ly = g.lsy - g.y; ll = Math.hypot(lx, ly) || 1; }
-      else if (near) { lx = dx; ly = dy; ll = d || 1; }
+      else if (near || g.mood === "retreat") { lx = dx; ly = dy; ll = d || 1; } // even going, it looks back
+      else if (g.mood === "emerge") { lx = Math.sin(time * 1.4 + g.ph) * 0.35; ly = -0.75; ll = 1; }
       else if (g.mood === "hover") { lx = Math.sin(time * 0.7 + g.ph); ly = 0.3 * Math.sin(time * 0.43 + g.ph2); ll = 1; }
       g.lookX += ((lx / ll) * 0.9 - g.lookX) * Math.min(1, dt * 2);
       g.lookY += ((ly / ll) * 0.6 - g.lookY) * Math.min(1, dt * 2);
-      g.gape += (g.startle * 1.1 - g.gape) * Math.min(1, dt * 6); // the mouth opens only in fright
+      const targetGape = Math.max(g.startle * 1.1, wailing * 1.3, g.mood === "linger" ? 0.35 + 0.15 * Math.sin(time * 2 + g.ph) : g.mood === "materialize" ? 0.4 * clamp(g.moodT / 2.2, 0, 1) : 0);
+      g.gape += (targetGape - g.gape) * Math.min(1, dt * 6); // opens slightly when haunting the cursor, wider in fright
       g.blinkAt -= dt;
       if (g.blinkAt <= 0) { g.blink = 1; g.blinkAt = 4 + Math.random() * 7; }
       g.blink = Math.max(0, g.blink - dt * 5);
@@ -592,11 +643,12 @@ export function mount(canvas, opts = {}) {
       if (g.leaving) {
         g.out += dt;
         life *= 1 - smoothstep(0, 2.5, g.out);
+        if (g.leaveHow === "dissolve") g.scatter = Math.max(g.scatter || 0, smoothstep(0, 2.5, g.out) * 0.7);
         const off = g.x < -r * 3 || g.x > W + r * 3 || g.y < -r * 4 || g.y > H + r * 2;
         if (g.out > 2.6 || off) g.gone = true;
       }
       const flickering = g.flick > 0; // arrivals simply fade in
-      g.glitch = g.startle * 0.8; // rows slip only when a click startles it
+      g.glitch = g.startle > 0.32 ? (g.startle - 0.32) * 1.1 : 0; // rows slip only when a click startles it
       // a flicker is a slow waver in strength, never a hard on/off strobe
       g.fadeMood = (g.fadeMood ?? 1) + ((g.mood === "retreat" ? 0.55 : 1) - (g.fadeMood ?? 1)) * Math.min(1, dt * 1.5);
       g.vis = life * (flickering ? 0.72 + 0.28 * Math.cos(time * 9 + g.id) : 1) * (1 - 0.85 * (g.scatter || 0)) * g.fadeMood;
@@ -642,26 +694,40 @@ export function mount(canvas, opts = {}) {
 
   // The shroud hangs from a spine of 12 links, like a rope: the head drags it, gravity pulls it
   // down, so it trails along the path just travelled and swings out on every turn.
-  const SPINE = 12;
   const segVx = new Float32Array(SPINE), segVy = new Float32Array(SPINE), segInv = new Float32Array(SPINE), segLenInv = new Float32Array(SPINE), widthAt = new Float32Array(SPINE + 1);
   function updateSpine(g, dt) {
-    const r = radius(g), seg = r * 0.5 * g.K.tail;
+    const r = radius(g), seg = r * 0.52 * g.K.tail;
     const bob = Math.sin(g.wave * 0.5 + g.ph2) * r * 0.16;
-    const ht = g.htilt || 0;
-    const nx = g.x - Math.sin(ht) * r * 0.95, ny = g.y + bob + Math.cos(ht) * r * 0.95; // the shoulders
+    // the head leans the way its shroud trails (plus its crooked set and a slow sway), so head and
+    // body always read as one figure: no stiff upright head on a body streaming off sideways
+    let tilt = g.tilt || 0;
+    if (g.spine) {
+      const tdx = g.spine[3][0] - g.spine[0][0], tdy = g.spine[3][1] - g.spine[0][1];
+      const cock = g.mood === "linger" ? 0.16 * Math.sin(time * 0.6 + g.ph) : 0; // lingering, it cocks its head this way and that
+      const want = clamp(Math.atan2(-tdx, Math.max(1e-3, tdy)) * 0.6 + g.loll * 0.35 + Math.sin(g.wave * 0.25 + g.ph) * 0.05 + cock, -0.42, 0.42);
+      tilt += (want - tilt) * Math.min(1, dt * 3);
+    }
+    g.tilt = tilt;
+    const ax = -Math.sin(tilt), ay = Math.cos(tilt); // the head's own "down"
+    const nx = g.x + ax * r * 0.48, ny = g.y + bob + ay * r * 0.48; // upper shroud below the head
     if (!g.spine) { g.spine = []; for (let i = 0; i < SPINE; i++) g.spine.push([nx, ny + i * seg]); }
     const sp = g.spine;
     sp[0][0] = nx; sp[0][1] = ny;
     for (let i = 1; i < SPINE; i++) {
       const p = sp[i], q = sp[i - 1], f = i / SPINE;
-      p[1] += (0.5 + 0.4 * f) * r * dt; // gravity: it hangs when still
-      p[0] += Math.sin(time * 1.4 + i * 0.55 + g.ph) * r * (0.4 + 0.9 * f) * f * dt; // and flutters, curling at its end
+      p[1] += (1.7 + 1.1 * f) * r * dt; // gravity: the cloth hangs and only sweeps back so far, never streams flat
+      // a ripple runs down the cloth, quicker the faster it goes, and curls its end when idle
+      const ux = q[1] - p[1], uy = p[0] - q[0], ul = Math.hypot(ux, uy) || 1; // across the cloth
+      const amp = r * f * (0.45 + 0.9 * f) * (0.55 + 0.6 * (g.curl || 0) + Math.min(0.8, Math.hypot(g.vx, g.vy) / 90));
+      const wv = Math.sin(g.wave * 1.25 - i * 0.62 + g.ph) * amp * dt;
+      p[0] += (ux / ul) * wv; p[1] += (uy / ul) * wv;
+      if (i < 4) { // the shoulders carry on along the head's axis before the cloth swings free
+        const k = 0.3 * (1 - i / 4);
+        p[0] += (q[0] + ax * seg - p[0]) * k; p[1] += (q[1] + ay * seg - p[1]) * k;
+      }
       const dx = p[0] - q[0], dy = p[1] - q[1], d = Math.hypot(dx, dy) || 1;
       p[0] = q[0] + (dx / d) * seg; p[1] = q[1] + (dy / d) * seg;
     }
-    // the head turns a little to follow its own shroud
-    const ax = sp[3][0] - sp[0][0], ay = sp[3][1] - sp[0][1];
-    g.htilt = ht + (clamp(Math.atan2(-ax, ay) * 0.45, -0.35, 0.35) - ht) * Math.min(1, dt * 3);
   }
 
   function stampGhost(g, t) {
@@ -672,10 +738,11 @@ export function mount(canvas, opts = {}) {
     const pose = {
       lean: 0, wave: g.wave, gape: g.gape, reach: g.reach,
       eye: Math.max(0.08, 1 - g.blink), lookX: g.lookX, lookY: g.lookY,
-      face: K.face ? g.face : false, slim: K.slim, asym: g.asym,
+      face: K.face ? g.face : false, slim: K.slim * (g.girth || 1) * (1 - 0.1 * Math.max(0, g.stretch || 0)), asym: g.asym,
+      hood: g.hood ?? 0.06, stretch: g.stretch || 0,
     };
-    // the head lolls to one side and sways slowly
-    const tilt = (g.htilt || 0) + g.loll + Math.sin(g.wave * 0.25 + g.ph) * 0.07, ct = Math.cos(tilt), st = Math.sin(tilt);
+    // the head leans with the shoulders (worked out in updateSpine)
+    const tilt = g.tilt || 0, ct = Math.cos(tilt), st = Math.sin(tilt);
     const depth = ((embed ? 0.62 : 0.45) + (embed ? 0.38 : 0.55) * g.z) * g.vis * (K.alpha || 1); // the README is small: keep far ones readable
     if (depth < 0.02) return;
     const tick = Math.floor(t * 18);
@@ -684,23 +751,37 @@ export function mount(canvas, opts = {}) {
     for (const [px, py] of sp) { x0 = Math.min(x0, px - r * 1.2); x1 = Math.max(x1, px + r * 1.2); y0 = Math.min(y0, py - r); y1 = Math.max(y1, py + r); }
     const i0 = Math.max(0, Math.floor(x0 / cw)), i1 = Math.min(cols - 1, Math.floor(x1 / cw));
     const j0 = Math.max(0, Math.floor(y0 / ch)), j1 = Math.min(rows - 1, Math.floor(y1 / ch));
-    const N = SPINE - 1, slim = K.slim;
+    const N = SPINE - 1, slim = K.slim * (g.girth || 1) * (1 + (g.flare || 0)) * (1 + 0.04 * Math.sin(g.wave * 0.4 + g.ph3 * 6)); // and it breathes
     // per-link values, worked out once instead of for every cell
     for (let n = 0; n < N; n++) {
       const vx = sp[n + 1][0] - sp[n][0], vy = sp[n + 1][1] - sp[n][1], ll = vx * vx + vy * vy || 1;
       segVx[n] = vx; segVy[n] = vy; segInv[n] = 1 / ll; segLenInv[n] = 1 / Math.sqrt(ll);
     }
-    for (let n = 0; n <= N; n++) widthAt[n] = r * slim * (0.98 * Math.pow(1 - n / N, 0.62) + 0.05);
+    for (let n = 0; n <= N; n++) {
+      const s = n / N;
+      const swell = 1 + 0.22 * Math.sin(Math.min(1, s * 2.6) * Math.PI);
+      widthAt[n] = r * slim * swell * (0.92 * Math.pow(1 - s, g.droop ?? 0.58) + 0.06);
+    }
+    const emerging = g.mood === "emerge" ? clamp(g.moodT / 2.2, 0, 1) : 0;
+    const form = g.mood === "materialize" ? clamp(g.moodT / 2.0, 0, 1) : 0;
     const reach2 = (r * slim * 1.35) ** 2;
     for (let j = j0; j <= j1; j++) {
       const cy = (j + 0.5) * ch;
-      const sink = 1 - 0.85 * lowFog(j);
+      const sink = 1 - (0.85 - 0.72 * emerging) * lowFog(j);
       const slip = g.glitch > 0 && hash3(j, tick, g.id) < 0.35 * g.glitch ? (hash3(tick, j, 9) - 0.5) * 5 * cw : 0;
       for (let i = i0; i <= i1; i++) {
         const cx = (i + 0.5) * cw - slip;
         const dx = (cx - hx) / r, dy = (cy - hy) / r;
         const x = dx * ct + dy * st, y = -dx * st + dy * ct;
-        let d = wraithAt(pose, x, y); // head, face and arms
+        let sx = x, sy = y;
+        if (form > 0.01) {
+          const swirl = form * 0.65;
+          const ang = swirl * (1.8 - Math.min(1.5, Math.hypot(x, y)));
+          const ca = Math.cos(ang), sa = Math.sin(ang);
+          sx = x * ca - y * sa + Math.sin(y * 3 + t * 4) * swirl * 0.35;
+          sy = x * sa + y * ca + Math.cos(x * 3 - t * 3.5) * swirl * 0.35;
+        }
+        let d = wraithAt(pose, sx, sy); // head, face and arms
         if (wraithAt.hole > 0.05) {
           const hk = j * cols + i, hv = Math.min(1, wraithAt.hole * 1.5) * depth * depth * sink;
           if (hv > hole[hk]) hole[hk] = hv;
@@ -719,13 +800,14 @@ export function mount(canvas, opts = {}) {
           let wd = widthAt[n] + (widthAt[n + 1] - widthAt[n]) * u;
           if (sN > 0.35) { // the hem tears into strands that sway
             const side = (vx * qy - vy * qx) * segLenInv[n];
-            wd *= 1 - 0.75 * smoothstep(0.35, 1, sN) * (0.5 - 0.5 * Math.cos(side / r * 7.5 + sN * 5 + g.wave * 0.75));
+            wd *= 1 - 0.8 * (g.tatter ?? 0.75) * smoothstep(0.35, 1, sN) * (0.5 - 0.5 * Math.cos(side / r * 7.5 + sN * 5 + g.wave * 0.75));
           }
           const q = Math.sqrt(q2);
-          const v = smoothstep(wd * 1.25, wd * 0.4, q) * (0.82 - 0.42 * sN);
+          const v = smoothstep(wd * 1.25, wd * 0.4, q) * (1 - 0.2 * smoothstep(0, 0.3, sN) - 0.38 * sN); // as dense as the head at the neck, thinning down the hem
           if (v > body) { body = v; bs = sN; }
         }
-        if (body > d) d = body;
+        body *= wraithAt.keep;
+        d = d + body - d * body; // soft union of head and shroud: no seam where they overlap
         if (d < 0.02) continue;
         const nz = fbm(x * 1.7 + g.id * 13 - g.wave * 0.2, y * 1.4 - g.wave * 0.35, seed + 61, 3);
         if (!(embed ? P.embed : P).ink) d *= 1 - (1 - d) * (1 - d) * 0.95 * clamp(1.7 - nz * 2.4, 0, 1) * (0.3 + (body > 0 ? bs : 0));
@@ -746,6 +828,43 @@ export function mount(canvas, opts = {}) {
       const k = j * cols + i;
       dens[k] = Math.max(dens[k], (1 - u) * 0.3 * depth);
     }
+    if (form > 0.02) { // converging spiral mist when condensing in mid-air
+      for (let p2 = 0; p2 < 14; p2++) {
+        const ang = (p2 / 14) * TAU + t * 2.4 + form * 5 + g.ph;
+        const rad = r * (0.3 + 1.9 * form) * (0.7 + 0.5 * hash3(g.id, p2, 7));
+        const px = hx + Math.cos(ang) * rad, py = hy + Math.sin(ang) * rad * 0.85;
+        const ci = Math.floor(px / cw), cj = Math.floor(py / ch);
+        if (ci >= 0 && cj >= 0 && ci < cols && cj < rows) {
+          const ck = cj * cols + ci;
+          dens[ck] = Math.max(dens[ck], (0.25 + 0.45 * (1 - form)) * depth);
+        }
+      }
+    }
+    if (emerging > 0.02) { // rising grave-mist specks around the base when climbing out of the earth
+      for (let p2 = 0; p2 < 10; p2++) {
+        const u = (((t * 0.8 + p2 / 10 + g.ph3) % 1) + 1) % 1;
+        const px = g.x + (hash3(g.id, p2, 11) - 0.5) * r * 2.2;
+        const py = g.y + r * 0.9 - u * r * 1.8;
+        const ci = Math.floor(px / cw), cj = Math.floor(py / ch);
+        if (ci >= 0 && cj >= 0 && ci < cols && cj < rows) {
+          const ck = cj * cols + ci;
+          dens[ck] = Math.max(dens[ck], (1 - u) * 0.45 * emerging * depth);
+        }
+      }
+    }
+    if (g.leaving && g.leaveHow === "dissolve") { // upward ash specks when dissolving in mid-air
+      const dis = clamp(g.out / 2.5, 0, 1);
+      for (let p2 = 0; p2 < 10; p2++) {
+        const u = (((t * 0.7 + p2 / 10 + g.ph2) % 1) + 1) % 1;
+        const px = hx + (hash3(g.id, p2, 15) - 0.5) * r * (1.2 + dis * 1.6);
+        const py = hy - u * r * (1.2 + dis * 1.5);
+        const ci = Math.floor(px / cw), cj = Math.floor(py / ch);
+        if (ci >= 0 && cj >= 0 && ci < cols && cj < rows) {
+          const ck = cj * cols + ci;
+          dens[ck] = Math.max(dens[ck], (1 - u) * (1 - dis * 0.7) * 0.35 * depth);
+        }
+      }
+    }
   }
 
   /** Stamp this frame's wraiths, then let last frame's fade behind them as an afterimage. */
@@ -753,58 +872,15 @@ export function mount(canvas, opts = {}) {
     dens.fill(0); hole.fill(0);
     for (const g of ghosts) { updateSpine(g, dt); stampGhost(g, t); }
     const keep = Math.exp(-dt * 7);
-    for (let k = 0; k < trail.length; k++) { const a = trail[k] * keep; trail[k] = dens[k] > a ? dens[k] : a; }
+    for (let k = 0; k < trail.length; k++) {
+      const a = trail[k] * keep * (1 - 0.88 * hole[k]);
+      trail[k] = dens[k] > a ? dens[k] : a;
+    }
   }
 
   // --------------------------------------------------------------- drawing
 
-  function drawScene(t) {
-    const pal = embed ? P.embed : P;
-    const c = cache(pal);
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.globalAlpha = 1;
-    ctx.globalCompositeOperation = "source-over";
-    ctx.drawImage(c.bg, 0, 0);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    if (flash > 0 && pal === THEMES.dark) { // two quick pulses, then a long, soft fade
-      const a = flash > 0.86 ? (flash - 0.86) / 0.14 : flash > 0.72 ? 0.25 : flash > 0.62 ? (flash - 0.62) * 6 : flash * 0.55;
-      const lg = ctx.createLinearGradient(0, 0, 0, horizon);
-      lg.addColorStop(0, rgba(pal.flashC, a * 0.08)); lg.addColorStop(1, rgba(pal.flashC, a * 0.42));
-      ctx.fillStyle = lg; ctx.fillRect(0, 0, W, horizon + ch);
-    }
-
-    // fog banks rolling low over the graves
-    {
-      const fd = fogImg.data, fc = pal.mist;
-      for (let gj = 0; gj < grows; gj++) {
-        const low = 0.12 + 0.88 * lowFog(gj * 2);
-        for (let gi = 0; gi < gcols; gi++) {
-          const o = (gj * gcols + gi) * 4;
-          fd[o] = fc[0]; fd[o + 1] = fc[1]; fd[o + 2] = fc[2];
-          fd[o + 3] = 255 * fc[3] * smoothstep(0.4, 0.78, fogGrid[gj * gcols + gi]) * low;
-        }
-      }
-      fctx.putImageData(fogImg, 0, 0);
-      ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
-      ctx.drawImage(fogC, -cw, -ch, gcols * 2 * cw, grows * 2 * ch);
-    }
-
-    // soft light that follows each wraith's exact shape
-    const gd = glowImg.data, gl = pal.glow;
-    for (let k = 0, n = trail.length; k < n; k++) {
-      const o = k * 4, v = trail[k];
-      gd[o] = gl[0]; gd[o + 1] = gl[1]; gd[o + 2] = gl[2];
-      gd[o + 3] = v > 0.02 ? Math.min(255, v * 255 * pal.glowA) : 0;
-    }
-    gctx.putImageData(glowImg, 0, 0);
-    ctx.save();
-    ctx.globalCompositeOperation = pal.blend;
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = "high";
-    ctx.drawImage(glowC, -cw * 0.5, -ch * 0.5, (cols + 1) * cw, (rows + 1) * ch);
-    ctx.restore();
-
-    // collect every glyph into colour buckets, then draw bucket by bucket
+  function buildBuckets(pal) {
     counts.fill(0);
     let n = 0;
     const lx = ptr.x, ly = ptr.y, lr2 = (S * 0.22) ** 2, lit = ptr.light;
@@ -817,12 +893,10 @@ export function mount(canvas, opts = {}) {
         const dim = 1 - 0.8 * avoid[k];
         const v = trail[k];
         let b, ch2;
-        if (pal.socket && hole[k] > 0.18) { // the hollow face, painted dark
+        if (pal.socket && hole[k] > 0.18) { // the hollow face
           b = SOCKET; ch2 = hole[k] > 0.5 ? 9 : hole[k] > 0.34 ? 8 : 7;
         } else if (v >= 0.05) {
           if (pal.ink) {
-            // an outline: dark ink on the outermost ring of the figure, lighter on the next,
-            // and only faint dots on the sheet inside
             const T = 0.06, at = (ii, jj) => (ii < 0 || jj < 0 || ii >= cols || jj >= rows ? 0 : trail[jj * cols + ii]);
             const ring1 = at(i - 1, j) < T || at(i + 1, j) < T || at(i, j - 1) < T || at(i, j + 1) < T;
             const ring2 = !ring1 && (at(i - 2, j) < T || at(i + 2, j) < T || at(i, j - 2) < T || at(i, j + 2) < T);
@@ -837,7 +911,7 @@ export function mount(canvas, opts = {}) {
           const fx = i / 2, fxi = fx | 0, ffx = fx - fxi, q = fyi * gcols + fxi;
           const raw = lerp(lerp(fogGrid[q], fogGrid[q + 1], ffx), lerp(fogGrid[q + gcols], fogGrid[q + gcols + 1], ffx), ffy);
           let f = smoothstep(0.48, 0.76, raw) * (0.35 + 0.65 * lf);
-          if (ground[k] > 0.15 && (f < 0.55 || pal.socket || pal.noGroundFog)) continue; // pale fog over dark ground reads as a patch // pale fog over dark ground reads as stripes in the light theme
+          if (ground[k] > 0.15 && (f < 0.55 || pal.socket || pal.noGroundFog)) continue;
           let boost = 0;
           if (lit > 0.01) { const dx = (i + 0.5) * cw - lx, dy = cy - ly; boost = lit * Math.exp(-(dx * dx + dy * dy) / lr2); }
           f = Math.min(1, f + boost * 0.35);
@@ -851,17 +925,66 @@ export function mount(canvas, opts = {}) {
     let acc = 0;
     for (let b = 0; b <= SOCKET; b++) { starts[b] = acc; acc += counts[b]; }
     for (let m = 0; m < n; m++) order[starts[opB[m]]++] = m;
-    ctx.font = font();
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
+  }
+
+  function paintTheme(targetCtx, pal, t) {
+    const c = cache(pal);
+    targetCtx.setTransform(1, 0, 0, 1, 0, 0);
+    targetCtx.globalAlpha = 1;
+    targetCtx.globalCompositeOperation = "source-over";
+    targetCtx.drawImage(c.bg, 0, 0);
+    targetCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (flash > 0 && pal === THEMES.dark) { // two quick pulses, then a long, soft fade
+      const a = flash > 0.86 ? (flash - 0.86) / 0.14 : flash > 0.72 ? 0.25 : flash > 0.62 ? (flash - 0.62) * 6 : flash * 0.55;
+      const lg = targetCtx.createLinearGradient(0, 0, 0, horizon);
+      lg.addColorStop(0, rgba(pal.flashC, a * 0.08)); lg.addColorStop(1, rgba(pal.flashC, a * 0.42));
+      targetCtx.fillStyle = lg; targetCtx.fillRect(0, 0, W, horizon + ch);
+    }
+
+    // fog banks rolling low over the graves
+    {
+      const fd = fogImg.data, fc = pal.mist;
+      for (let gj = 0; gj < grows; gj++) {
+        const low = 0.12 + 0.88 * lowFog(gj * 2);
+        for (let gi = 0; gi < gcols; gi++) {
+          const o = (gj * gcols + gi) * 4;
+          fd[o] = fc[0]; fd[o + 1] = fc[1]; fd[o + 2] = fc[2];
+          fd[o + 3] = 255 * fc[3] * smoothstep(0.4, 0.78, fogGrid[gj * gcols + gi]) * low;
+        }
+      }
+      fctx.putImageData(fogImg, 0, 0);
+      targetCtx.imageSmoothingEnabled = true; targetCtx.imageSmoothingQuality = "high";
+      targetCtx.drawImage(fogC, -cw, -ch, gcols * 2 * cw, grows * 2 * ch);
+    }
+
+    // soft light that follows each wraith's exact shape
+    const gd = glowImg.data, gl = pal.glow;
+    for (let k = 0, n = trail.length; k < n; k++) {
+      const o = k * 4, v = trail[k] * (1 - 0.88 * avoid[k]) * (1 - 0.65 * hole[k]);
+      gd[o] = gl[0]; gd[o + 1] = gl[1]; gd[o + 2] = gl[2];
+      gd[o + 3] = v > 0.02 ? Math.min(255, v * 255 * pal.glowA) : 0;
+    }
+    gctx.putImageData(glowImg, 0, 0);
+    targetCtx.save();
+    targetCtx.globalCompositeOperation = pal.blend;
+    targetCtx.imageSmoothingEnabled = true;
+    targetCtx.imageSmoothingQuality = "high";
+    targetCtx.drawImage(glowC, -cw * 0.5, -ch * 0.5, (cols + 1) * cw, (rows + 1) * ch);
+    targetCtx.restore();
+
+    // collect every glyph into colour buckets, then draw bucket by bucket
+    buildBuckets(pal);
+    targetCtx.font = font();
+    targetCtx.textAlign = "center";
+    targetCtx.textBaseline = "middle";
     let m = 0;
     for (let b = 0; b <= SOCKET; b++) {
       const cnt = counts[b];
       if (!cnt) continue;
-      ctx.fillStyle = pal.css[b];
+      targetCtx.fillStyle = pal.css[b];
       for (let e = 0; e < cnt; e++, m++) {
         const o = order[m], k = opK[o];
-        ctx.fillText(CHARS[opC[o]], ((k % cols) + 0.5) * cw, (((k / cols) | 0) + 0.5) * ch);
+        targetCtx.fillText(CHARS[opC[o]], ((k % cols) + 0.5) * cw, (((k / cols) | 0) + 0.5) * ch);
       }
     }
 
@@ -871,33 +994,48 @@ export function mount(canvas, opts = {}) {
         const a = smoothstep(0, 1.2, age - n * 0.09) * (1 - smoothstep(4.2, 6.8, age)) * (0.75 + 0.25 * Math.sin(t * 3 + n));
         const k = whisper.j * cols + whisper.i + n * 2;
         if (a <= 0.02 || whisper.text[n] === " " || trail[k] > 0.1) continue;
-        ctx.fillStyle = rgba(pal.whisper, 0.42 * a * (1 - 0.8 * (avoid[k] || 0)));
-        ctx.fillText(whisper.text[n], (whisper.i + n * 2 + 0.5) * cw, (whisper.j + 0.5) * ch + Math.sin(t * 1.3 + n * 0.7) * 1.5);
+        targetCtx.fillStyle = rgba(pal.whisper, 0.42 * a * (1 - 0.8 * (avoid[k] || 0)));
+        targetCtx.fillText(whisper.text[n], (whisper.i + n * 2 + 0.5) * cw, (whisper.j + 0.5) * ch + Math.sin(t * 1.3 + n * 0.7) * 1.5);
       }
     }
     for (const rp of ripples) {
       const age = t - rp.t0, rad = 14 + age * 90, a = 1 - age / 2.6;
       if (a <= 0) continue;
-      ctx.fillStyle = rgba(pal.ripple, a * 0.6);
+      targetCtx.fillStyle = rgba(pal.ripple, a * 0.6);
       const i0 = Math.max(0, Math.floor((rp.x - rad - cw) / cw)), i1 = Math.min(cols - 1, Math.floor((rp.x + rad + cw) / cw));
       const j0 = Math.max(0, Math.floor((rp.y - rad - ch) / ch)), j1 = Math.min(rows - 1, Math.floor((rp.y + rad + ch) / ch));
       for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
         const dx = (i + 0.5) * cw - rp.x, dy = (j + 0.5) * ch - rp.y, d = Math.hypot(dx, dy);
-        if (Math.abs(d - rad) < ch * 0.55) ctx.fillText(lineGlyph(-dy, dx), (i + 0.5) * cw, (j + 0.5) * ch);
+        if (Math.abs(d - rad) < ch * 0.55) targetCtx.fillText(lineGlyph(-dy, dx), (i + 0.5) * cw, (j + 0.5) * ch);
       }
     }
 
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    targetCtx.setTransform(1, 0, 0, 1, 0, 0);
     if (c.vg) {
-      ctx.drawImage(c.vg, 0, 0);
+      targetCtx.drawImage(c.vg, 0, 0);
     }
   }
 
-  /** Mark the cells under a box (canvas pixels) as dimmed, with a little slack round it. */
+  function drawScene(t) {
+    const pal = embed ? P.embed : P;
+    paintTheme(ctx, pal, t);
+  }
+
+  /** Mark the cells under a box (canvas pixels) as dimmed, feathering 2 cells round the edge. */
   function dimCells(r, padX, padY) {
-    const i0 = Math.max(0, Math.floor((r.left - padX) / cw)), i1 = Math.min(cols - 1, Math.floor((r.right + padX) / cw));
-    const j0 = Math.max(0, Math.floor((r.top - padY) / ch)), j1 = Math.min(rows - 1, Math.floor((r.bottom + padY) / ch));
-    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) avoid[j * cols + i] = 1;
+    const f = 2;
+    const i0 = Math.max(0, Math.floor((r.left - padX) / cw) - f), i1 = Math.min(cols - 1, Math.floor((r.right + padX) / cw) + f);
+    const j0 = Math.max(0, Math.floor((r.top - padY) / ch) - f), j1 = Math.min(rows - 1, Math.floor((r.bottom + padY) / ch) + f);
+    const ci0 = Math.floor((r.left - padX) / cw), ci1 = Math.floor((r.right + padX) / cw);
+    const cj0 = Math.floor((r.top - padY) / ch), cj1 = Math.floor((r.bottom + padY) / ch);
+    for (let j = j0; j <= j1; j++) {
+      const dy = j < cj0 ? cj0 - j : j > cj1 ? j - cj1 : 0;
+      for (let i = i0; i <= i1; i++) {
+        const dx = i < ci0 ? ci0 - i : i > ci1 ? i - ci1 : 0;
+        const w = 1 - Math.hypot(dx, dy) / (f + 1);
+        if (w > avoid[j * cols + i]) avoid[j * cols + i] = w;
+      }
+    }
   }
 
   /**
@@ -924,7 +1062,7 @@ export function mount(canvas, opts = {}) {
     // Avoid and dim by the text actually on screen, line by line: an element's own box can be far
     // wider than its words (a full-width nav), and a hidden view still has a box.
     for (const el of document.querySelectorAll("[data-sky-avoid]")) {
-      if (el.checkVisibility ? !el.checkVisibility({ visibilityProperty: true, opacityProperty: true }) : getComputedStyle(el).visibility === "hidden") continue;
+      if (el.closest(".view:not([data-active])")) continue;
       let l = Infinity, t0 = Infinity, rt = -Infinity, bt = -Infinity;
       const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
       for (let t; (t = walk.nextNode());) {
@@ -980,7 +1118,7 @@ export function mount(canvas, opts = {}) {
   const boxObserver = typeof ResizeObserver === "function" ? new ResizeObserver(onResize) : null;
   if (boxObserver) boxObserver.observe(canvas);
   addEventListener("resize", onResize); // devicePixelRatio changes (zoom) do not resize the box
-  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { caches = {}; });
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { caches = {}; prewarm(); });
 
   // Out of sight -- scrolled away, or display:none -- it neither steps nor draws.
   let inView = true;
@@ -995,7 +1133,7 @@ export function mount(canvas, opts = {}) {
     const p = at(e);
     ptr.x = p.x; ptr.y = p.y;
     // a hand resting on the mouse jitters; only a real move resets the stillness
-    if (Math.hypot(p.x - (ptr.rx ?? -1e5), p.y - (ptr.ry ?? -1e5)) > 24) { ptr.rx = p.x; ptr.ry = p.y; ptr.lastMove = time; }
+    if (Math.hypot(p.x - (ptr.rx ?? -1e5), p.y - (ptr.ry ?? -1e5)) > 72) { ptr.rx = p.x; ptr.ry = p.y; ptr.lastMove = time; }
   };
   const onLeave = () => { ptr.x = ptr.y = -1e5; };
   const onDown = (e) => {
@@ -1017,7 +1155,7 @@ export function mount(canvas, opts = {}) {
       const k = 1 - d / reach;
       g.startle = Math.max(g.startle, 0.5 + 0.5 * k);
       g.scatter = Math.max(g.scatter || 0, k); // they all but vanish, then drift back
-      g.vx += (dx / d) * 380 * k; g.vy += (dy / d) * 280 * k;
+      g.vx += (dx / d) * 260 * k; g.vy += (dy / d) * 200 * k;
       g.hd = Math.atan2(dy, dx);
       g.flick = 0.5;
     }

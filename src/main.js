@@ -1,4 +1,4 @@
-// The page around the scene: theme toggle (a circular view-transition wipe), hash routing
+// The page around the scene: theme toggle (GPU-composited View Transition crossfade), hash routing
 // with cross-fading views, and record mode.
 import { mount } from "./scene.js";
 
@@ -27,28 +27,43 @@ if (params.has("record")) {
   function applyTheme(isLight) {
     root.dataset.theme = isLight ? "light" : "dark";
     themeButton.setAttribute("aria-checked", String(isLight));
-    document.querySelector('meta[name="theme-color"]').setAttribute("content", isLight ? "#a4aaa6" : "#070808");
+    document.querySelector('meta[name="theme-color"]').setAttribute("content", isLight ? "#98a09c" : "#060808");
     sky.setTheme(isLight);
   }
 
-  /** The browser snapshots the old page and cross-fades it into the new one, with the canvas still running. */
   let switching = false;
-  function switchTheme(x, y) {
+  /** Swap themes in a circle that grows out of the button. View Transitions snapshot the old and
+   *  new page once; the circle is a clip-path animation on the new snapshot, so it runs on the
+   *  compositor and nothing (text halos, the canvas) repaints while it plays. */
+  function switchTheme() {
     if (switching) return;
     const isLight = root.dataset.theme !== "light";
     try { localStorage.setItem(THEME_KEY, isLight ? "light" : "dark"); } catch (e) {}
     if (!document.startViewTransition || reducedMotion.matches) { applyTheme(isLight); return; }
     switching = true;
-    root.dataset.transition = "theme";
-    const vt = document.startViewTransition(() => { applyTheme(isLight); sky.redraw(); });
-    vt.ready.catch(() => {}); // the cross-fade itself is pure CSS (::view-transition-old/new)
-    vt.finished.finally(() => { delete root.dataset.transition; switching = false; });
+    root.dataset.transition = "1";
+    const vt = document.startViewTransition(() => {
+      applyTheme(isLight);
+      sky.redraw();
+    });
+    const b = themeButton.getBoundingClientRect();
+    const x = b.left + b.width / 2, y = b.top + b.height / 2;
+    const r = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+    vt.ready.then(() => {
+      try {
+        root.animate(
+          { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${r}px at ${x}px ${y}px)`] },
+          { duration: 620, easing: "cubic-bezier(.4, 0, .2, 1)", pseudoElement: "::view-transition-new(root)" },
+        );
+      } catch (e) {} // no pseudo-element animation: the CSS fade still runs
+    }).catch(() => {});
+    vt.finished.finally(() => {
+      delete root.dataset.transition;
+      switching = false;
+    }).catch(() => {});
   }
 
-  themeButton.addEventListener("click", (e) => {
-    const r = e.currentTarget.getBoundingClientRect();
-    switchTheme(r.left + r.width / 2, r.top + r.height / 2);
-  });
+  themeButton.addEventListener("click", () => switchTheme());
   prefersLight.addEventListener("change", () => { if (!storedTheme()) applyTheme(prefersLight.matches); });
 
   const SITE_TITLE = document.title;
@@ -64,7 +79,7 @@ if (params.has("record")) {
       else a.removeAttribute("aria-current");
     }
     document.title = active === "realm" ? SITE_TITLE : `${SITE_TITLE} — ${active}`;
-    setTimeout(() => sky.measure(), 360); // after the cross-fade settles
+    requestAnimationFrame(() => sky.measure()); // measure immediately on the new active view
   }
   addEventListener("hashchange", route);
   addEventListener("resize", () => requestAnimationFrame(() => sky.measure()));
