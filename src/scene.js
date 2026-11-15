@@ -44,9 +44,11 @@ const THEMES = {
     socket: null, ripple: [26, 32, 32], mist: [236, 242, 238, 0.6], whisper: [40, 48, 46],
   },
 };
+// The README on GitHub's dark page: a blue-grey mist on the horizon that the graves and the tree
+// stand out against (picked out with a pale rim), fading into the page colour at every edge.
 THEMES.dark.embed = {
-  ...THEMES.dark, key: "dark-embed", page: [13, 17, 23], skyTop: null, edge: [13, 17, 23, 1], sky: [26, 33, 38],
-  ground: [6, 8, 10], groundEdge: [60, 72, 70],
+  ...THEMES.dark, key: "dark-embed", page: [13, 17, 23], skyTop: null, edge: [13, 17, 23, 1], sky: [34, 42, 52],
+  mist: [70, 84, 96, 0.36], ground: [5, 7, 10], groundEdge: [104, 116, 128],
 };
 // The README on GitHub's white: no grey panel (it read as a smudge), just the ghosts as dark
 // smoke on white with the page showing through their faces, faint mist low down, and the graves
@@ -674,7 +676,7 @@ export function mount(canvas, opts = {}) {
     };
     // the head lolls to one side and sways slowly
     const tilt = (g.htilt || 0) + g.loll + Math.sin(g.wave * 0.25 + g.ph) * 0.07, ct = Math.cos(tilt), st = Math.sin(tilt);
-    const depth = (0.45 + 0.55 * g.z) * g.vis * (K.alpha || 1);
+    const depth = ((embed ? 0.62 : 0.45) + (embed ? 0.38 : 0.55) * g.z) * g.vis * (K.alpha || 1); // the README is small: keep far ones readable
     if (depth < 0.02) return;
     const tick = Math.floor(t * 18);
     // bounds: the head, the arms and every link of the spine, padded by the shroud's width
