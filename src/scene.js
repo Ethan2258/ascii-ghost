@@ -464,9 +464,9 @@ export function mount(canvas, opts = {}) {
       const sp = g.speed * (0.55 + 0.45 * Math.sin(time * 0.33 + g.ph));
       let tx = (Math.cos(g.hd) * 0.6 + Math.cos(fa) * 0.4) * sp;
       let ty = (Math.sin(g.hd) * 0.6 + Math.sin(fa) * 0.4) * sp * 0.75;
-      // now and then it changes course with a soft push, then drifts again
-      if (CALM.has(g.mood) && g.mood !== "sink" && Math.random() < dt * (0.015 + 0.06 * g.rest) * (g.mood === "hover" ? 0.15 : 1)) {
-        const a = g.hd + (Math.random() - 0.5) * 1.6, p = 45 + Math.random() * 45;
+      // now and then a short dart onto a new course, then it drifts again
+      if (CALM.has(g.mood) && g.mood !== "sink" && Math.random() < dt * (0.02 + 0.11 * g.rest) * (g.mood === "hover" ? 0.15 : 1)) {
+        const a = g.hd + (Math.random() - 0.5) * 1.9, p = 80 + Math.random() * 70;
         g.vx += Math.cos(a) * p; g.vy += Math.sin(a) * p * 0.7; g.hd = a;
         if (Math.random() < 0.5) g.flick = 0.35;
       }
