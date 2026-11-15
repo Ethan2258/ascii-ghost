@@ -361,9 +361,10 @@ export function mount(canvas, opts = {}) {
   /** Live: how many there are drifts over time; they come and go on their own. */
   function population(dt) {
     const max = clamp(Math.round((W * H) / 190000), 3, 7);
-    const want = Math.round(lerp(2, max, smoothstep(0.25, 0.75, valueNoise(time * 0.035, 3.7, seed))));
+    const resting = time - ptr.lastMove > 0.8 && ptr.x > -1e4;
+    const want = resting ? max : Math.round(lerp(2, max, smoothstep(0.25, 0.75, valueNoise(time * 0.035, 3.7, seed)))); // a resting cursor fills the page
     const alive = ghosts.filter((g) => !g.leaving).length;
-    if (alive < want && Math.random() < dt * 0.6) {
+    if (alive < want && Math.random() < dt * (resting ? 1.5 : 0.6)) {
       const roll = Math.random();
       const g = makeGhost(roll < 0.42 ? "wraith" : roll < 0.8 ? "wisp" : roll < 0.93 ? "shade" : "passer", Math.random);
       // They come from every side: in from the left or right (whichever half of the page is
@@ -425,14 +426,24 @@ export function mount(canvas, opts = {}) {
     const idle = time - ptr.lastMove;
     ptr.light += ((idle < 3 && ptr.x > -1e4 ? 1 : 0) - ptr.light) * Math.min(1, dt * 2);
     population(dt);
-    if (idle > 1 && ptr.x > -1e4) {
-      const free = ghosts.filter((g) => g.K.face && !g.K.passer && !g.leaving && CALM.has(g.mood) && g.mood !== "sink" && g.cur > 0.25 && !(g.cool > 0));
+    // A cursor that rests draws them in: within a second every ghost on the page turns toward it
+    // and comes, up to six at a time, to gather in a ring around it.
+    if (idle > 0.8 && ptr.x > -1e4) {
+      const free = ghosts.filter((g) => g.K.face && !g.K.passer && !g.leaving && (CALM.has(g.mood) || g.mood === "investigate") && !(g.cool > 0));
       const busy = ghosts.filter((g) => g.mood === "approach" || g.mood === "linger").length;
       free.sort((a, b) => Math.hypot(a.x - ptr.x, a.y - ptr.y) - Math.hypot(b.x - ptr.x, b.y - ptr.y));
-      for (const g of free.slice(0, Math.max(0, 2 - busy))) {
-        if (Math.hypot(g.x - ptr.x, g.y - ptr.y) > S * 1.1) break;
-        const other = ghosts.find((o) => o !== g && (o.mood === "approach" || o.mood === "linger"));
-        g.mood = "approach"; g.side = other ? -other.side : g.x < ptr.x ? -1 : 1; // one on each side
+      for (const g of free.slice(0, Math.max(0, 6 - busy))) {
+        // six places evenly round the ring; it takes the free one nearest to where it already is
+        const bearing = Math.atan2(g.y - ptr.y, g.x - ptr.x);
+        const taken = ghosts.filter((o) => o.mood === "approach" || o.mood === "linger").map((o) => o.slotN);
+        let best = -1, bd = 9;
+        for (let k = 0; k < 6; k++) {
+          if (taken.includes(k)) continue;
+          const a = k * TAU / 6 + 0.3, dd = Math.abs(Math.atan2(Math.sin(a - bearing), Math.cos(a - bearing)));
+          if (dd < bd) { bd = dd; best = k; }
+        }
+        if (best < 0) break;
+        g.mood = "approach"; g.slotN = best; g.slot = best * TAU / 6 + 0.3;
       }
     }
     for (const g of ghosts) {
@@ -504,16 +515,19 @@ export function mount(canvas, opts = {}) {
       const dx = ptr.x - g.x, dy = ptr.y - g.y, d = Math.hypot(dx, dy);
       g.cool = Math.max(0, (g.cool || 0) - dt);
       if (g.mood === "approach" || g.mood === "linger") {
-        if (idle < 0.15 || ptr.x < -1e4) { g.mood = "retreat"; g.moodT = 2.4; g.cool = 7; } // the cursor moved away: it shies off
+        if (idle < 0.15 || ptr.x < -1e4) { g.mood = "retreat"; g.moodT = 2.0; g.cool = 2.5; } // the cursor moved away: it shies off
       }
       if (g.mood === "approach" || g.mood === "linger") {
-        // hold off to one side of the cursor, a little above it, looking at it
-        const ox = ptr.x + g.side * r * 1.9, oy = ptr.y - r * 0.5;
+        // take a place in the ring around the cursor (its head level with it), and slowly circle
+        g.slot += dt * 0.07; // the whole ring turns slowly
+        const ring = r * 1.6 + S * 0.2;
+        const ox = ptr.x + Math.cos(g.slot) * ring, oy = ptr.y + Math.sin(g.slot) * ring * 0.62 - r * 0.6;
         const ex = ox - g.x, ey = oy - g.y, ed = Math.hypot(ex, ey) || 1;
-        const want = g.mood === "approach" ? Math.min(85, ed * 1.1) : Math.min(25, ed * 1.5);
-        tx = tx * 0.15 + (ex / ed) * want; ty = ty * 0.15 + (ey / ed) * want;
-        if (g.mood === "approach" && ed < r * 0.9) { g.mood = "linger"; g.moodT = 1.8 + 3.5 * g.cur; }
-        if (g.mood === "linger" && (g.moodT -= dt) <= 0) { g.mood = "retreat"; g.moodT = 2.6; g.cool = 9; }
+        const want = g.mood === "approach" ? Math.min(150, 40 + ed * 1.3) : Math.min(40, ed * 1.6);
+        tx = tx * 0.1 + (ex / ed) * want; ty = ty * 0.1 + (ey / ed) * want;
+        if (g.mood === "approach" && ed < r * 1.1) { g.mood = "linger"; g.moodT = 7 + 8 * g.cur; }
+        // it stays a good while, then drifts off, and is soon drawn back if the cursor is still there
+        if (g.mood === "linger" && (g.moodT -= dt) <= 0) { g.mood = "retreat"; g.moodT = 2.2; g.cool = 4; }
       } else if (g.mood === "retreat") { // turns away and drifts off, a little fainter
         const ad = d || 1;
         tx = tx * 0.3 - (dx / ad) * 60; ty = ty * 0.3 - (dy / ad) * 40 - 12;
@@ -524,11 +538,12 @@ export function mount(canvas, opts = {}) {
       for (const o of ghosts) {
         if (o === g) continue;
         const ox = g.x - o.x, oy = g.y - o.y, od = Math.hypot(ox, oy) || 1, room = (r + radius(o)) * 1.6;
-        const give = (g.mood === "approach" || g.mood === "linger") ? 0.25 : 0.8;
+        const give = (g.mood === "approach" || g.mood === "linger") ? 0.55 : 0.8; // they keep apart round the ring
         if (od < room) { tx += (ox / od) * (room - od) * give; ty += (oy / od) * (room - od) * give; }
       }
-      g.vx += (tx - g.vx) * Math.min(1, dt * 0.7);
-      g.vy += (ty - g.vy) * Math.min(1, dt * 0.7);
+      const turn = g.mood === "approach" ? 2.2 : 0.7; // called, it turns at once
+      g.vx += (tx - g.vx) * Math.min(1, dt * turn);
+      g.vy += (ty - g.vy) * Math.min(1, dt * turn);
       g.x += g.vx * dt; g.y += g.vy * dt;
       // the shroud swings round to trail behind, with a little lag
       const target = trailTilt(g, g.vx, g.vy);
