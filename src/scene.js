@@ -47,17 +47,18 @@ const THEMES = {
 // The README on GitHub's dark page: a blue-grey mist on the horizon that the graves and the tree
 // stand out against (picked out with a pale rim), fading into the page colour at every edge.
 THEMES.dark.embed = {
-  ...THEMES.dark, key: "dark-embed", page: [13, 17, 23], skyTop: null, edge: [13, 17, 23, 1], sky: [34, 42, 52],
-  mist: [70, 84, 96, 0.36], ground: [5, 7, 10], groundEdge: [104, 116, 128], socket: [10, 14, 19],
+  ...THEMES.dark, key: "dark-embed", page: [13, 17, 23], skyTop: null, edge: [13, 17, 23, 1], sky: [44, 55, 68],
+  mist: [78, 94, 108, 0.42], ground: [4, 6, 9], groundEdge: [136, 150, 166], socket: [10, 14, 19],
+  glow: [150, 168, 184], glowA: 0.52,
 };
 // The README on GitHub's white: no grey panel (it read as a smudge), just the ghosts as dark
 // smoke on white with the page showing through their faces, faint mist low down, and the graves
 // in dark glyphs, everything fading to white at the edges.
 THEMES.light.embed = {
   ...THEMES.light, key: "light-embed", glyphGround: true,
-  page: [255, 255, 255], skyTop: null, sky: [236, 239, 238], edge: [255, 255, 255, 1],
-  fog: [150, 158, 156], mist: [150, 160, 158, 0.16], ground: [64, 70, 70], groundEdge: [140, 146, 146],
-  ghostLo: [108, 116, 116], ghostHi: [12, 16, 16], glow: [96, 104, 104], glowA: 0.24, blend: "source-over",
+  page: [255, 255, 255], skyTop: null, sky: [218, 224, 223], edge: [255, 255, 255, 1],
+  fog: [138, 146, 146], mist: [140, 150, 150, 0.2], ground: [34, 39, 40], groundEdge: [112, 120, 122],
+  ghostLo: [86, 94, 96], ghostHi: [10, 13, 14], glow: [120, 128, 130], glowA: 0.3, blend: "source-over",
   socket: [252, 254, 253],
 };
 for (const t of [THEMES.dark, THEMES.light, THEMES.dark.embed, THEMES.light.embed]) {
@@ -257,8 +258,8 @@ export function mount(canvas, opts = {}) {
         const fade = 1 - smoothstep(0, 5, j - hillRow[i]);
         if (fade < 0.03) continue;
         const edge = gd < 0.75, h = hash3(i, j, 4);
-        b.fillStyle = rgba(edge ? pal.groundEdge : pal.ground, (edge ? 0.7 : 0.9) * fade);
-        b.fillText(edge ? (gd < 0.45 ? "." : ":") : h < 0.8 ? "#" : "%", (i + 0.5) * cw, (j + 0.5) * ch);
+        b.fillStyle = rgba(edge ? pal.groundEdge : pal.ground, (edge ? 0.85 : 0.95) * fade);
+        b.fillText(edge ? (gd < 0.45 ? ":" : "%") : h < 0.7 ? "#" : "@", (i + 0.5) * cw, (j + 0.5) * ch); // solid, so the graves read
         continue;
       }
       b.fillStyle = rgba(pal.ground, Math.min(1, gd * 1.3));
@@ -277,9 +278,9 @@ export function mount(canvas, opts = {}) {
     grad.addColorStop(0, rgba(pal.edge, 0)); grad.addColorStop(1, rgba(pal.edge, pal.edge[3]));
     v.fillStyle = grad; v.fillRect(0, 0, W, H);
     if (embed) { // melt into the README: the bottom (ground) and top edges fade out completely
-      const bot = v.createLinearGradient(0, H * 0.72, 0, H * 0.97);
+      const bot = v.createLinearGradient(0, H * 0.84, 0, H * 0.995);
       bot.addColorStop(0, rgba(pal.edge, 0)); bot.addColorStop(1, rgba(pal.edge, 1));
-      v.fillStyle = bot; v.fillRect(0, H * 0.72, W, H * 0.28);
+      v.fillStyle = bot; v.fillRect(0, H * 0.84, W, H * 0.16);
       const top = v.createLinearGradient(0, H * 0.02, 0, H * 0.2);
       top.addColorStop(0, rgba(pal.edge, 1)); top.addColorStop(1, rgba(pal.edge, 0));
       v.fillStyle = top; v.fillRect(0, 0, W, H * 0.2);
@@ -341,13 +342,12 @@ export function mount(canvas, opts = {}) {
       const span = W * 1.9, f = ((u + 0.15) % 1 + 1) % 1;
       x = -W * 0.45 + f * span; y = H * 0.4 + H * 0.05 * Math.sin(TAU * f * 2 + g.ph);
       vx = span / loopT; vy = H * 0.05 * TAU * 2 / loopT * Math.cos(TAU * f * 2 + g.ph);
-    } else if (g.kind === "wisp") { // weaves right to left across the whole frame
-      const f = ((u + g.ph3) % 1 + 1) % 1, span = W * 1.4;
-      x = W * 1.2 - f * span;
-      y = H * 0.36 + H * 0.1 * Math.sin(TAU * 2 * f + g.ph);
-      vx = -span / loopT; vy = H * 0.1 * TAU * 2 / loopT * Math.cos(TAU * 2 * f + g.ph);
-    } else if (g.kind === "wraith") { // a wide, slow figure eight just right of centre
-      x = W * 0.58 + W * 0.2 * Math.sin(w * t + g.ph);
+    } else if (g.kind === "wisp") { // a slow loop left of centre: never fast enough to stream flat
+      x = W * 0.38 + W * 0.09 * Math.sin(w * t + g.ph);
+      y = H * 0.3 + H * 0.07 * Math.sin(2 * w * t + g.ph2);
+      vx = W * 0.09 * w * Math.cos(w * t + g.ph); vy = H * 0.07 * 2 * w * Math.cos(2 * w * t + g.ph2);
+    } else if (g.kind === "wraith") { // a wide, slow figure eight right of centre, clear of the others
+      x = W * 0.68 + W * 0.13 * Math.sin(w * t + g.ph);
       y = H * 0.3 + H * 0.08 * Math.sin(2 * w * t + g.ph2);
       vx = W * 0.2 * w * Math.cos(w * t + g.ph); vy = H * 0.08 * 2 * w * Math.cos(2 * w * t + g.ph2);
     } else { // far back on the left, barely moving
