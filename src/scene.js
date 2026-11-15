@@ -28,7 +28,7 @@ const THEMES = {
     key: "dark",
     page: [7, 8, 8], skyTop: [4, 5, 5], edge: [0, 0, 0, 0.9], sky: [38, 50, 45],
     fog: [104, 122, 114], ground: [3, 4, 4], groundEdge: [62, 76, 70],
-    ghostLo: [56, 68, 64], ghostHi: [210, 228, 220], glow: [110, 146, 132], glowA: 0.44, blend: "lighter",
+    ghostLo: [62, 66, 68], ghostHi: [226, 230, 231], glow: [142, 150, 150], glowA: 0.46, blend: "lighter",
     socket: null, ripple: [170, 196, 186], flashC: [178, 198, 194],
   },
   // light: a dead, overcast day; low grey-green light, darker overhead, near-black graves
@@ -274,6 +274,7 @@ export function mount(canvas, opts = {}) {
       age: 0, life: 14 + r() * 30, leaving: false, gone: false, out: 0, fadeIn: 1.5 + r() * 2,
       // temperament: how curious, how easily frightened, how restless, how much it keeps company
       cur: r(), shy: r(), rest: r(), soc: r(),
+      face: (r() * 3) | 0, // terror, anger or sorrow
       mood: "wander", moodT: 3 + r() * 6, hd2: r() * TAU, listen: 0, lsx: 0, lsy: 0, pvx: 0,
     };
   }
@@ -296,6 +297,7 @@ export function mount(canvas, opts = {}) {
     const cast = [makeGhost("shade", r), makeGhost("wisp", r), makeGhost("wraith", r)];
     if (!embed) cast.push(makeGhost("passer", r)); // the README keeps to three, well apart
     cast[0].z = 0.2; cast[1].z = 0.6; cast[2].z = 0.9;
+    cast[0].face = 2; cast[1].face = 1; cast[2].face = 0; if (cast[3]) cast[3].face = 2;
     return cast;
   }
 
@@ -326,7 +328,7 @@ export function mount(canvas, opts = {}) {
     g.wave = TAU * 4 * t / loopT + g.ph;
     const sp = Math.hypot(vx, vy) || 1;
     g.lookX = (vx / sp) * 0.7; g.lookY = 0.2;
-    g.reach = 0.5 + 0.5 * Math.sin(w * t + g.ph2);
+    g.reach = 0; // no arms in the recording: they only reach for a cursor
     g.gape = 0;
     const v = ((u + g.ph3) % 1 + 1) % 1;
     g.blink = v > 0.5 && v < 0.52 ? 1 : 0;
@@ -565,7 +567,7 @@ export function mount(canvas, opts = {}) {
   // down, so it trails along the path just travelled and swings out on every turn.
   const SPINE = 12;
   function updateSpine(g, dt) {
-    const r = radius(g), seg = r * 0.36 * g.K.tail;
+    const r = radius(g), seg = r * 0.42 * g.K.tail;
     const bob = Math.sin(g.wave * 0.5 + g.ph2) * r * 0.16;
     const ht = g.htilt || 0;
     const nx = g.x - Math.sin(ht) * r * 0.95, ny = g.y + bob + Math.cos(ht) * r * 0.95; // the shoulders
@@ -592,7 +594,7 @@ export function mount(canvas, opts = {}) {
     const pose = {
       lean: 0, wave: g.wave, gape: g.gape, reach: g.reach,
       eye: Math.max(0.08, 1 - g.blink), lookX: g.lookX, lookY: g.lookY,
-      face: K.face, arms: K.arms, slim: K.slim, tail: K.tail, noBody: true,
+      face: K.face ? g.face : false, slim: K.slim,
     };
     const tilt = (g.htilt || 0) + Math.sin(g.wave * 0.25 + g.ph) * 0.05, ct = Math.cos(tilt), st = Math.sin(tilt);
     const depth = (0.45 + 0.55 * g.z) * g.vis * (K.alpha || 1);
@@ -628,7 +630,7 @@ export function mount(canvas, opts = {}) {
           const qx = cx - (ax + vx * u), qy = cy - (ay + vy * u), q = Math.hypot(qx, qy);
           const sN = (n + u) / N;
           const side = (vx * qy - vy * qx) / Math.sqrt(ll); // signed distance across the shroud
-          let wd = r * slim * (1.0 * Math.pow(1 - sN, 0.75) + 0.06);
+          let wd = r * slim * (0.98 * Math.pow(1 - sN, 0.62) + 0.05);
           // the hem tears into strands that sway
           const tat = smoothstep(0.5, 1, sN) * (0.5 - 0.5 * Math.cos(side / r * 6.5 + sN * 4 + g.wave * 0.75));
           wd *= 1 - 0.55 * tat;
