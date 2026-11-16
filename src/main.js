@@ -41,6 +41,9 @@ if (params.has("record")) {
     try { localStorage.setItem(THEME_KEY, isLight ? "light" : "dark"); } catch (e) {}
     if (!document.startViewTransition || reducedMotion.matches) { applyTheme(isLight); return; }
     switching = true;
+    sky.warm(isLight); // the new theme's sky and graves are ready before the old page is captured
+    sky.hold(true); // the scene stands still while the circle grows: nothing competes for the frame
+    const release = setTimeout(() => sky.hold(false), 1500); // never left frozen, whatever happens to the transition
     root.dataset.transition = "1";
     const vt = document.startViewTransition(() => {
       applyTheme(isLight);
@@ -53,12 +56,15 @@ if (params.has("record")) {
       try {
         root.animate(
           { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${r}px at ${x}px ${y}px)`] },
-          { duration: 620, easing: "cubic-bezier(.4, 0, .2, 1)", pseudoElement: "::view-transition-new(root)" },
+          { duration: 520, easing: "cubic-bezier(.4, 0, .2, 1)", pseudoElement: "::view-transition-new(root)" },
         );
       } catch (e) {} // no pseudo-element animation: the CSS fade still runs
     }).catch(() => {});
     vt.finished.finally(() => {
       delete root.dataset.transition;
+      clearTimeout(release);
+      if ((root.dataset.theme === "light") !== isLight) { applyTheme(isLight); sky.redraw(); } // the transition was skipped
+      sky.hold(false);
       switching = false;
     }).catch(() => {});
   }
