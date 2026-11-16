@@ -61,10 +61,12 @@
   :root[data-theme="light"] nav button .moon { display: block; }
   :root[data-theme="light"] nav button .sun { display: none; }
 
-  /* theme switch: a circle grows from the button (clip-path on the new snapshot, set from main.js), on the compositor */
-  ::view-transition-old(root), ::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
-  ::view-transition-old(root) { z-index: 1; }
-  ::view-transition-new(root) { z-index: 2; }
+  /* theme switch: the new page settles in over the old like mist, opacity and scale only, all on the compositor */
+  ::view-transition-group(root) { animation: none; }
+  ::view-transition-old(root), ::view-transition-new(root) { mix-blend-mode: normal; }
+  ::view-transition-old(root) { z-index: 1; animation: none; }
+  ::view-transition-new(root) { z-index: 2; animation: theme-in .42s cubic-bezier(.25, .8, .25, 1) both; will-change: opacity, transform; }
+  @keyframes theme-in { from { opacity: 0; transform: scale(1.025); } }
   :root[data-transition], :root[data-transition] * { transition: none !important; }
 
   /* a soft halo in the page colour keeps text readable when a ghost drifts behind it */

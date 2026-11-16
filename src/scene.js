@@ -1207,10 +1207,10 @@ export function mount(canvas, opts = {}) {
     frameTimes.push(performance.now() - t0);
     if (frameTimes.length > 120) frameTimes.shift();
   }
-  let raf = 0, held = false;
+  let raf = 0;
   function tick(now) {
     raf = requestAnimationFrame(tick);
-    if (!inView || held) { lastNow = now; return; } // and no catching up on return
+    if (!inView) { lastNow = now; return; } // and no catching up on return
     frame(now);
   }
   raf = requestAnimationFrame(tick);
@@ -1225,8 +1225,6 @@ export function mount(canvas, opts = {}) {
     setTheme(light) { P = THEMES[light ? "light" : "dark"]; },
     /** Paint a theme's static layers now (if the idle prewarm has not yet), so switching never stalls. */
     warm(light) { if (dens && !embed) cache(THEMES[light ? "light" : "dark"]); },
-    /** Hold the picture still (true) while a view transition plays, so the main thread stays free. */
-    hold(on) { held = !!on; },
     /** Stop for good: the loop, the observers and every listener. */
     destroy() {
       cancelAnimationFrame(raf);

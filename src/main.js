@@ -32,9 +32,9 @@ if (params.has("record")) {
   }
 
   let switching = false;
-  /** Swap themes in a circle that grows out of the button. View Transitions snapshot the old and
-   *  new page once; the circle is a clip-path animation on the new snapshot, so it runs on the
-   *  compositor and nothing (text halos, the canvas) repaints while it plays. */
+  /** Swap themes as a soft fade, like mist settling: View Transitions snapshot the old and new page
+   *  once, and only opacity and scale animate (see the CSS), which the compositor does on its own;
+   *  the fade never waits on the main thread, so the ghosts keep drifting right through it. */
   function switchTheme() {
     if (switching) return;
     const isLight = root.dataset.theme !== "light";
@@ -42,29 +42,14 @@ if (params.has("record")) {
     if (!document.startViewTransition || reducedMotion.matches) { applyTheme(isLight); return; }
     switching = true;
     sky.warm(isLight); // the new theme's sky and graves are ready before the old page is captured
-    sky.hold(true); // the scene stands still while the circle grows: nothing competes for the frame
-    const release = setTimeout(() => sky.hold(false), 1500); // never left frozen, whatever happens to the transition
     root.dataset.transition = "1";
     const vt = document.startViewTransition(() => {
       applyTheme(isLight);
       sky.redraw();
     });
-    const b = themeButton.getBoundingClientRect();
-    const x = b.left + b.width / 2, y = b.top + b.height / 2;
-    const r = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
-    vt.ready.then(() => {
-      try {
-        root.animate(
-          { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${r}px at ${x}px ${y}px)`] },
-          { duration: 520, easing: "cubic-bezier(.4, 0, .2, 1)", pseudoElement: "::view-transition-new(root)" },
-        );
-      } catch (e) {} // no pseudo-element animation: the CSS fade still runs
-    }).catch(() => {});
     vt.finished.finally(() => {
       delete root.dataset.transition;
-      clearTimeout(release);
       if ((root.dataset.theme === "light") !== isLight) { applyTheme(isLight); sky.redraw(); } // the transition was skipped
-      sky.hold(false);
       switching = false;
     }).catch(() => {});
   }
