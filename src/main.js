@@ -24,38 +24,25 @@ if (params.has("record")) {
   const sky = mount(canvas, { theme: initialLight ? "light" : "dark" });
   window.ghostRealm = sky;
 
-  function applyTheme(isLight) {
-    root.dataset.theme = isLight ? "light" : "dark";
+  const THEME_FADE = 560; // ms; index.html's --theme-fade matches it
+  function applyTheme(isLight, animate = false) {
+    root.dataset.theme = isLight ? "light" : "dark"; // the page colours blend over --theme-fade (CSS)
     themeButton.setAttribute("aria-checked", String(isLight));
     document.querySelector('meta[name="theme-color"]').setAttribute("content", isLight ? "#b8bfbd" : "#060808");
-    sky.setTheme(isLight);
+    return sky.setTheme(isLight, { duration: animate ? THEME_FADE : 0 }); // and the scene blends with them
   }
 
-  let switching = false;
-  /** Swap themes as a soft fade, like mist settling: View Transitions snapshot the old and new page
-   *  once, and only opacity and scale animate (see the CSS), which the compositor does on its own;
-   *  the fade never waits on the main thread, so the ghosts keep drifting right through it. */
+  /** The scene blends its own palette from one theme to the other while the ghosts drift on, and
+   *  the page colours follow by CSS in the same time and ease: no snapshots, no masks. Switching
+   *  again mid-way simply turns round from where it has got to. */
   function switchTheme() {
-    if (switching) return;
     const isLight = root.dataset.theme !== "light";
     try { localStorage.setItem(THEME_KEY, isLight ? "light" : "dark"); } catch (e) {}
-    if (!document.startViewTransition || reducedMotion.matches) { applyTheme(isLight); return; }
-    switching = true;
-    sky.warm(isLight); // the new theme's sky and graves are ready before the old page is captured
-    root.dataset.transition = "1";
-    const vt = document.startViewTransition(() => {
-      applyTheme(isLight);
-      sky.redraw();
-    });
-    vt.finished.finally(() => {
-      delete root.dataset.transition;
-      if ((root.dataset.theme === "light") !== isLight) { applyTheme(isLight); sky.redraw(); } // the transition was skipped
-      switching = false;
-    }).catch(() => {});
+    applyTheme(isLight, true);
   }
 
   themeButton.addEventListener("click", () => switchTheme());
-  prefersLight.addEventListener("change", () => { if (!storedTheme()) applyTheme(prefersLight.matches); });
+  prefersLight.addEventListener("change", () => { if (!storedTheme()) applyTheme(prefersLight.matches, true); });
 
   const SITE_TITLE = document.title;
   const views = [...document.querySelectorAll("[data-view]")];

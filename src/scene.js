@@ -62,17 +62,43 @@ THEMES.light.embed = {
   socket: [252, 254, 253],
 };
 for (const t of [THEMES.dark, THEMES.light, THEMES.dark.embed, THEMES.light.embed]) {
-  t.css = [];
+  t.cssN = []; // [r, g, b, a] of each glyph colour
   const darkSmoke = t.ghostHi[0] < t.ghostLo[0];
   for (let i = 0; i < GL; i++) {
     const k = i / (GL - 1);
     const alpha = darkSmoke ? 0.28 + 0.72 * Math.pow(k, 0.7) : 0.18 + 0.82 * k;
-    t.css.push(rgba(mixRgb(t.ghostLo, t.ghostHi, Math.pow(k, 0.75)), alpha));
+    t.cssN.push([...mixRgb(t.ghostLo, t.ghostHi, Math.pow(k, 0.75)), alpha]);
   }
-  for (let i = 0; i < FL; i++) t.css.push(rgba(t.fog, 0.04 + (i / (FL - 1)) * 0.5));
-  t.css.push(t.socket ? rgba(t.socket, 0.92) : "rgba(0,0,0,0)");
+  for (let i = 0; i < FL; i++) t.cssN.push([...t.fog, 0.04 + (i / (FL - 1)) * 0.5]);
+  t.cssN.push(t.socket ? [...t.socket, 0.92] : [0, 0, 0, 0]);
+  t.css = t.cssN.map((c) => rgba(c, c[3]));
 }
 const SOCKET = GL + FL;
+
+// A theme part-way to another: every colour blended, so a theme switch can play inside the scene
+// itself (the ghosts drift on, nothing is snapshotted or masked). Reuses one object per frame.
+const MIX_KEYS = ["sky", "fog", "ground", "groundEdge", "ghostLo", "ghostHi", "glow", "mist", "socket", "ripple", "flashC", "whisper"];
+const mixPal = { css: [], key: "mix" };
+function blendThemes(A, B, k) {
+  const m = mixPal;
+  for (const key of MIX_KEYS) {
+    const a = A[key], b = B[key];
+    if (!a || !b) { m[key] = (k < 0.5 ? a : b) || a || b; continue; }
+    const o = m[key] && m[key].length === a.length ? m[key] : (m[key] = a.slice());
+    for (let i = 0; i < a.length; i++) o[i] = a[i] + (b[i] - a[i]) * k;
+  }
+  m.glowA = A.glowA + (B.glowA - A.glowA) * k;
+  m.mistAbove = (A.mistAbove ? 1 : 0) * (1 - k) + (B.mistAbove ? 1 : 0) * k;
+  m.noGroundFog = k < 0.5 ? A.noGroundFog : B.noGroundFog;
+  m.ink = false;
+  for (let i = 0; i < A.cssN.length; i++) {
+    const a = A.cssN[i], b = B.cssN[i];
+    m.css[i] = `rgba(${(a[0] + (b[0] - a[0]) * k) | 0},${(a[1] + (b[1] - a[1]) * k) | 0},${(a[2] + (b[2] - a[2]) * k) | 0},${+(a[3] + (b[3] - a[3]) * k).toFixed(3)})`;
+  }
+  m.from = A; m.to = B; m.k = k;
+  return m;
+}
+const easeInOutSine = (x) => 0.5 - 0.5 * Math.cos(Math.PI * x); // CSS: cubic-bezier(.37, 0, .63, 1)
 
 export function mount(canvas, opts = {}) {
   const ctx = canvas.getContext("2d");
@@ -951,11 +977,14 @@ export function mount(canvas, opts = {}) {
   }
 
   function paintTheme(targetCtx, pal, t) {
-    const c = cache(pal);
+    const mixing = pal === mixPal, k = mixing ? pal.k : 1;
+    const c = cache(mixing ? pal.to : pal), c0 = mixing ? cache(pal.from) : null;
     targetCtx.setTransform(1, 0, 0, 1, 0, 0);
     targetCtx.globalAlpha = 1;
     targetCtx.globalCompositeOperation = "source-over";
+    if (c0) { targetCtx.drawImage(c0.bg, 0, 0); targetCtx.globalAlpha = k; }
     targetCtx.drawImage(c.bg, 0, 0);
+    targetCtx.globalAlpha = 1;
     targetCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
     if (flash > 0 && pal === THEMES.dark) { // two quick pulses, then a long, soft fade
       const a = flash > 0.86 ? (flash - 0.86) / 0.14 : flash > 0.72 ? 0.25 : flash > 0.62 ? (flash - 0.62) * 6 : flash * 0.55;
@@ -969,7 +998,7 @@ export function mount(canvas, opts = {}) {
       const fd = fogImg.data, fc = pal.mist;
       for (let gj = 0; gj < grows; gj++) {
         let low = 0.12 + 0.88 * lowFog(gj * 2);
-        if (pal.mistAbove) low *= 1 - smoothstep(horizon - ch, horizon + ch * 2, gj * 2 * ch);
+        if (pal.mistAbove) low *= 1 - (+pal.mistAbove) * smoothstep(horizon - ch, horizon + ch * 2, gj * 2 * ch);
         for (let gi = 0; gi < gcols; gi++) {
           const o = (gj * gcols + gi) * 4;
           fd[o] = fc[0]; fd[o + 1] = fc[1]; fd[o + 2] = fc[2];
@@ -990,9 +1019,14 @@ export function mount(canvas, opts = {}) {
     }
     gctx.putImageData(glowImg, 0, 0);
     targetCtx.save();
-    targetCtx.globalCompositeOperation = pal.blend;
     targetCtx.imageSmoothingEnabled = true;
     targetCtx.imageSmoothingQuality = "high";
+    if (mixing && pal.from.blend !== pal.to.blend) { // each theme lights its ghosts its own way: fade one into the other
+      targetCtx.globalCompositeOperation = pal.from.blend; targetCtx.globalAlpha = 1 - k;
+      targetCtx.drawImage(glowC, -cw * 0.5, -ch * 0.5, (cols + 1) * cw, (rows + 1) * ch);
+      targetCtx.globalAlpha = k;
+    }
+    targetCtx.globalCompositeOperation = mixing ? pal.to.blend : pal.blend;
     targetCtx.drawImage(glowC, -cw * 0.5, -ch * 0.5, (cols + 1) * cw, (rows + 1) * ch);
     targetCtx.restore();
 
@@ -1035,14 +1069,44 @@ export function mount(canvas, opts = {}) {
     }
 
     targetCtx.setTransform(1, 0, 0, 1, 0, 0);
-    if (c.vg) {
-      targetCtx.drawImage(c.vg, 0, 0);
-    }
+    if (c0 && c0.vg) { targetCtx.globalAlpha = 1 - k; targetCtx.drawImage(c0.vg, 0, 0); }
+    if (c.vg) { targetCtx.globalAlpha = k; targetCtx.drawImage(c.vg, 0, 0); }
+    targetCtx.globalAlpha = 1;
   }
 
+  // a theme change in progress: { from, to, t0, dur, done } (performance.now() milliseconds)
+  let fade = null;
+  function themeAt() {
+    if (embed) return P.embed;
+    if (!fade) return P;
+    const x = clamp((performance.now() - fade.t0) / fade.dur, 0, 1);
+    if (x >= 1) { const f = fade; fade = null; f.done(); return P; }
+    return blendThemes(fade.from, fade.to, easeInOutSine(x));
+  }
   function drawScene(t) {
-    const pal = embed ? P.embed : P;
-    paintTheme(ctx, pal, t);
+    paintTheme(ctx, themeAt(), t);
+  }
+  /** Switch theme; with a duration the scene blends from the old palette to the new one, frame by
+   *  frame, while everything keeps moving. Resolves once the new theme is fully in. */
+  function changeTheme(light, o = {}) {
+    const to = THEMES[light ? "light" : "dark"];
+    const dur = reducedMotion.matches ? 0 : o.duration || 0;
+    if (fade) { // switched again mid-way: turn round from where it has got to
+      const x = clamp((performance.now() - fade.t0) / fade.dur, 0, 1);
+      const f = fade; fade = null; f.done();
+      if (to === f.from && dur > 0) {
+        P = to;
+        return new Promise((done) => { fade = { from: f.to, to, t0: performance.now() - (1 - x) * dur, dur, done }; setTimeout(() => { if (fade && fade.to === to) themeAt(); }, dur + 120); });
+      }
+    }
+    const from = P;
+    P = to;
+    if (!dur || from === to || embed || !dens) { if (dens) drawScene(time); return Promise.resolve(); }
+    cache(to); // ready before the first blended frame
+    return new Promise((done) => {
+      fade = { from, to, t0: performance.now(), dur, done };
+      setTimeout(() => { if (fade && fade.to === to) { themeAt(); drawScene(time); } }, dur + 120); // a hidden tab still settles
+    });
   }
 
   /** Mark the cells under a box (canvas pixels) as dimmed, feathering 2 cells round the edge. */
@@ -1222,7 +1286,9 @@ export function mount(canvas, opts = {}) {
     measure,
     /** Draw right now, so a view transition captures the new theme. */
     redraw() { drawScene(time); },
-    setTheme(light) { P = THEMES[light ? "light" : "dark"]; },
+    /** setTheme(light, { duration }) → Promise: with a duration (ms) the scene itself blends to the new
+     *  palette (ease-in-out sine; CSS cubic-bezier(.37, 0, .63, 1)) while the ghosts keep moving. */
+    setTheme: changeTheme,
     /** Paint a theme's static layers now (if the idle prewarm has not yet), so switching never stalls. */
     warm(light) { if (dens && !embed) cache(THEMES[light ? "light" : "dark"]); },
     /** Stop for good: the loop, the observers and every listener. */
