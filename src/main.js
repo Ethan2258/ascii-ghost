@@ -1,4 +1,4 @@
-// The page around the scene: theme toggle (GPU-composited View Transition crossfade), hash routing
+// The page around the scene: theme toggle (in-scene palette blend synced with CSS), hash routing
 // with cross-fading views, and record mode.
 import { mount } from "./scene.js";
 

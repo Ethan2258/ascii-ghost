@@ -8,7 +8,7 @@
 - `src/scene.js` 场景、渲染与幽灵的来去；`src/wraith.js` 幽灵的形状（密度场，脸是挖空的）；`src/util.js` 噪声与工具函数
 - 幽灵数量随时间起伏：会从边缘飘进来、淡入、游荡，再溶解或飘走；移动时留下残影，闪烁时字符行会错位
 - 天空、墓碑和暗角每个主题只绘制一次，字符按颜色批量绘制，60/120Hz 下单帧约 4ms
-- 明暗主题切换用 View Transitions 从按钮处圆形展开；尊重 `prefers-reduced-motion`
+- 明暗主题切换在场景内逐帧平滑过渡配色，并与页面 CSS 颜色同步；尊重 `prefers-reduced-motion`
 
 ## 嵌入到别的页面
 
@@ -17,7 +17,7 @@
 ```js
 import { mount } from "./src/scene.js";
 const sky = mount(document.querySelector("canvas"), { theme: "dark" });
-sky.setTheme(true);   // 换成浅色；配合 View Transitions 时先调用 sky.redraw()
+sky.setTheme(true, { duration: 560 }); // 换成浅色并平滑过渡配色；不传 duration 则立即切换
 sky.measure();        // 页面布局变了（滚动、加载完数据）之后重新读取文字位置
 sky.destroy();        // 停掉动画、观察器和所有事件监听
 ```
