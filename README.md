@@ -27,12 +27,16 @@ sky.destroy();        // 停掉动画、观察器和所有事件监听
 - `data-sky-dim`：幽灵可以从文字下面飘过，只是逐行变淡、不被推开，适合大段正文和数字
 - `data-sky-ignore`：在这个元素上点击不会吓散幽灵
 - `mount(canvas, { leftTree: false })`：不画左边那棵小枯树，适合文字靠左排、会被树压住的页面
+- `mount(canvas, { fps: 30 })`：每秒最多画几帧，来得太早的帧跳过、时间计入下一步；不传或 0 为跟随屏幕刷新
+- `mount(canvas, { maxDpr: 1 })`：最高按几倍像素密度绘制，默认 2；也可以传函数，每次尺寸变化时重新读取，例如手机上取 1 省电
 
 本地预览：
 
 ```bash
 python -m http.server 8899
 ```
+
+检查：起好上面的本地服务后运行 `node tools/smoke.mjs`（需要 `playwright-core` 和 Chromium，`CHROME=` 指定浏览器路径）。它在真实浏览器里确认页面能画出来、没有控制台报错、主题切换和路由正常、嵌入选项 `fps`、`maxDpr` 和 `destroy()` 有效、录制模式首尾帧能接上。每次推送和 PR 由 GitHub Actions 自动跑。
 
 录制主页动图：打开 `index.html?record=1320,450,240,24&theme=dark`，调用 `window.__sky.frame(i)` 逐帧取 PNG（`tools/record.mjs`），再用 `tools/encode.py` 编码为无缝循环的 WebP。
 

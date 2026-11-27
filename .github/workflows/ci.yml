@@ -1,0 +1,41 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["**.md", "LICENSE", "fonts/GEIST-LICENSE"]
+  pull_request:
+    paths-ignore: ["**.md", "LICENSE", "fonts/GEIST-LICENSE"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A new push supersedes any run still in progress for the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # There is no build: the site is the files in this repository, and other pages vendor
+  # src/ as it is. So the check is the page itself in a real browser (tools/smoke.mjs):
+  # it draws without console errors, the theme switch and routes work, the embedding
+  # options (fps, maxDpr, destroy) do what the README says, and the record
+  # mode still closes its loop.
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      # The runner's own Google Chrome does the drawing; playwright-core only drives it.
+      - run: npm install --no-save --no-package-lock --no-audit --no-fund playwright-core@1.65.1
+      - name: Smoke test
+        run: |
+          python3 -m http.server 8899 --bind 127.0.0.1 >/dev/null 2>&1 &
+          for i in $(seq 1 20); do curl -fs http://127.0.0.1:8899/ >/dev/null && break; sleep 0.5; done
+          CHROME="$(command -v google-chrome)" node tools/smoke.mjs http://127.0.0.1:8899/
